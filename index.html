@@ -1,0 +1,310 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Turf War Guesser</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+        }
+        .btn {
+            transition: all 0.2s ease-in-out;
+        }
+        .btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+        }
+    </style>
+</head>
+<body class="bg-gray-900 text-white flex items-center justify-center min-h-screen p-4">
+
+    <div class="w-full max-w-2xl mx-auto text-center">
+        <h1 class="text-4xl font-bold mb-2">Turf War Guesser</h1>
+        <p class="text-gray-400 mb-6">Can you guess which color covers more area?</p>
+
+        <!-- Canvas for the game -->
+        <div class="bg-gray-800 rounded-lg shadow-2xl overflow-hidden mb-6 aspect-video">
+            <canvas id="gameCanvas"></canvas>
+        </div>
+
+        <!-- Game Controls and Status -->
+        <div id="controls" class="h-24 flex flex-col items-center justify-center">
+            <!-- Initial Start Button -->
+            <div id="start-container">
+                <button id="startButton" class="bg-green-600 hover:bg-green-700 text-white font-bold py-3 px-8 rounded-lg text-xl btn">Start Game</button>
+            </div>
+            
+            <!-- Guessing UI -->
+            <div id="guessing-container" class="hidden">
+                 <p id="guess-prompt" class="text-lg mb-4 font-semibold">Which color has more turf?</p>
+                <div class="flex gap-4 justify-center">
+                    <button id="guessButton1" class="text-white font-bold py-3 px-8 rounded-lg text-xl btn">Guess</button>
+                    <button id="guessButton2" class="text-white font-bold py-3 px-8 rounded-lg text-xl btn">Guess</button>
+                </div>
+            </div>
+
+            <!-- Result UI -->
+            <div id="result-container" class="hidden text-center">
+                 <p id="result-text" class="text-2xl font-bold mb-2"></p>
+                 <p id="percentage-text" class="text-lg text-gray-400 mb-4"></p>
+                 <button id="playAgainButton" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-8 rounded-lg text-xl btn">Next Level</button>
+            </div>
+        </div>
+        
+        <!-- Score -->
+        <div class="mt-4 flex justify-center gap-8">
+            <p class="text-xl font-semibold">Level: <span id="level">1</span></p>
+            <p class="text-xl font-semibold">High Score: <span id="highScore">0</span></p>
+        </div>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+
+        // UI Elements
+        const startContainer = document.getElementById('start-container');
+        const guessingContainer = document.getElementById('guessing-container');
+        const resultContainer = document.getElementById('result-container');
+        const startButton = document.getElementById('startButton');
+        const guessButton1 = document.getElementById('guessButton1');
+        const guessButton2 = document.getElementById('guessButton2');
+        const playAgainButton = document.getElementById('playAgainButton');
+        const resultText = document.getElementById('result-text');
+        const percentageText = document.getElementById('percentage-text');
+        const levelEl = document.getElementById('level');
+        const highScoreEl = document.getElementById('highScore');
+        
+        // Game State
+        let gameState = 'initial'; // initial, generating, guessing, result
+        let color1, color2;
+        let level = 1;
+        let highScore = 0;
+        let animationFrameId;
+
+        function resizeCanvas() {
+            const container = canvas.parentElement;
+            canvas.width = container.clientWidth;
+            canvas.height = container.clientHeight;
+        }
+
+        function setupColors() {
+            // Splatoon-like colors
+            const colorPairs = [
+                ['#4f46e5', '#f59e0b'], // Indigo vs Amber
+                ['#db2777', '#10b981'], // Pink vs Emerald
+                ['#0ea5e9', '#f97316'], // Sky vs Orange
+                ['#8b5cf6', '#eab308'], // Violet vs Yellow
+                ['#d946ef', '#65a30d'], // Fuchsia vs Lime
+            ];
+            const pair = colorPairs[Math.floor(Math.random() * colorPairs.length)];
+            color1 = pair[0];
+            color2 = pair[1];
+
+            guessButton1.style.backgroundColor = color1;
+            guessButton2.style.backgroundColor = color2;
+        }
+        
+        function updateUI() {
+            startContainer.classList.toggle('hidden', gameState !== 'initial');
+            guessingContainer.classList.toggle('hidden', gameState !== 'guessing');
+            resultContainer.classList.toggle('hidden', gameState !== 'result');
+        }
+
+        // --- Shape Drawing Functions ---
+        function drawCircleSplat(x, y, size, color) {
+            const radius = size / 2;
+            ctx.beginPath();
+            ctx.arc(x, y, radius, 0, Math.PI * 2);
+            ctx.fillStyle = color;
+            ctx.fill();
+            return Math.PI * radius * radius;
+        }
+
+        function generateTurf() {
+            if (animationFrameId) {
+                cancelAnimationFrame(animationFrameId);
+            }
+          
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            const totalCanvasArea = canvas.width * canvas.height;
+            const totalTargetFill = totalCanvasArea * 1.5; // Aim for 150% fill for better coverage
+            
+            // New tiered difficulty scaling based on your requested percentages
+            const levelDifferences = [
+                // Levels 1-16
+                0.20, 0.19, 0.18, 0.17, 0.16, 0.15, 0.14, 0.13, 0.12, 0.11,
+                0.10, 0.09, 0.08, 0.07, 0.06, 0.05,
+                // Levels 17-22
+                0.045, 0.04, 0.035, 0.03, 0.0275, 0.025
+            ];
+
+            let difference;
+            if (level <= 22) {
+                difference = levelDifferences[level - 1];
+            } else if (level >= 23 && level <= 29) {
+                difference = 0.02;
+            } else if (level >= 30 && level <= 39) {
+                difference = 0.015;
+            } else { // level 40+
+                difference = 0.01;
+            }
+            
+            const halfDifference = difference / 2;
+            
+            // Randomly decide if color 1 is bigger or smaller
+            const biggerPortion = 0.5 + halfDifference;
+            const smallerPortion = 0.5 - halfDifference;
+            const targetPercentage1 = Math.random() < 0.5 ? biggerPortion : smallerPortion;
+
+            const targetArea1 = totalTargetFill * targetPercentage1;
+            const targetArea2 = totalTargetFill * (1 - targetPercentage1);
+
+            let generatedArea1 = 0;
+            let generatedArea2 = 0;
+            let splatCount = 0;
+            
+            function drawingLoop() {
+                const color1Needed = generatedArea1 < targetArea1;
+                const color2Needed = generatedArea2 < targetArea2;
+                
+                // Determine which color to draw based on which is further from its goal,
+                // making the distribution less predictable than simple alternation.
+                let isColor1;
+                if (color1Needed && !color2Needed) {
+                    isColor1 = true; // Only color 1 is left to draw
+                } else if (!color1Needed && color2Needed) {
+                    isColor1 = false; // Only color 2 is left to draw
+                } else {
+                    // Both colors are still needed, pick the one that is proportionally further behind.
+                    const progress1 = generatedArea1 / targetArea1;
+                    const progress2 = generatedArea2 / targetArea2;
+                    isColor1 = progress1 <= progress2;
+                }
+
+                const color = isColor1 ? color1 : color2;
+                const x = Math.random() * canvas.width;
+                const y = Math.random() * canvas.height;
+                const size = (Math.random() * 0.08 + 0.03) * canvas.width;
+                
+                // Only draw circles
+                const currentArea = drawCircleSplat(x, y, size, color);
+
+                if(isColor1) {
+                    generatedArea1 += currentArea;
+                } else {
+                    generatedArea2 += currentArea;
+                }
+                
+                splatCount++;
+
+                if ((generatedArea1 >= targetArea1 && generatedArea2 >= targetArea2) || splatCount > 800) {
+                    gameState = 'guessing';
+                    updateUI();
+                } else {
+                    animationFrameId = requestAnimationFrame(drawingLoop);
+                }
+            }
+
+            drawingLoop();
+        }
+
+        // Helper to convert hex color to an RGB object
+        function hexToRgb(hex) {
+            const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
+            return result ? {
+                r: parseInt(result[1], 16),
+                g: parseInt(result[2], 16),
+                b: parseInt(result[3], 16)
+            } : null;
+        }
+
+        // Accurately count the final visible pixels for each color
+        function calculatePixelAreas() {
+            const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+            const data = imageData.data;
+            let pixelArea1 = 0;
+            let pixelArea2 = 0;
+
+            const rgb1 = hexToRgb(color1);
+            const rgb2 = hexToRgb(color2);
+
+            // Loop through every pixel on the canvas
+            for (let i = 0; i < data.length; i += 4) {
+                const r = data[i];
+                const g = data[i + 1];
+                const b = data[i + 2];
+                
+                if (r === rgb1.r && g === rgb1.g && b === rgb1.b) {
+                    pixelArea1++;
+                } else if (r === rgb2.r && g === rgb2.g && b === rgb2.b) {
+                    pixelArea2++;
+                }
+            }
+            return { pixelArea1, pixelArea2 };
+        }
+
+        function handleGuess(guess) {
+            if (gameState !== 'guessing') return;
+            
+            // Use the new, 100% accurate pixel counting method
+            const { pixelArea1, pixelArea2 } = calculatePixelAreas();
+
+            const total = pixelArea1 + pixelArea2;
+            const percent1 = total > 0 ? (pixelArea1 / total * 100).toFixed(1) : "0.0";
+            const percent2 = total > 0 ? (pixelArea2 / total * 100).toFixed(1) : "0.0";
+            
+            const winner = pixelArea1 > pixelArea2 ? 1 : 2;
+            const correct = guess === winner;
+
+            if(correct) {
+                level++;
+                if (level > highScore) {
+                    highScore = level;
+                    localStorage.setItem('turfGuesserHighScore', highScore);
+                    highScoreEl.textContent = highScore;
+                }
+                resultText.textContent = "Correct!";
+                resultText.style.color = '#22c55e'; // Green 500
+                playAgainButton.textContent = "Next Level";
+            } else {
+                level = 1; // Reset on incorrect guess
+                resultText.textContent = "Incorrect! Back to Level 1.";
+                resultText.style.color = '#ef4444'; // Red 500
+                playAgainButton.textContent = "Try Again";
+            }
+
+            levelEl.textContent = level;
+            percentageText.innerHTML = `<span style="color:${color1}; font-weight: bold;">Color 1: ${percent1}%</span> vs <span style="color:${color2}; font-weight: bold;">Color 2: ${percent2}%</span>`;
+            
+            gameState = 'result';
+            updateUI();
+        }
+
+        function startGame() {
+            gameState = 'generating';
+            updateUI();
+            setupColors();
+            setTimeout(generateTurf, 100);
+        }
+
+        // Event Listeners
+        startButton.addEventListener('click', startGame);
+        playAgainButton.addEventListener('click', startGame);
+        guessButton1.addEventListener('click', () => handleGuess(1));
+        guessButton2.addEventListener('click', () => handleGuess(2));
+        window.addEventListener('resize', resizeCanvas);
+
+        // Initial setup
+        highScore = localStorage.getItem('turfGuesserHighScore') || 0;
+        highScoreEl.textContent = highScore;
+        resizeCanvas();
+        updateUI();
+    </script>
+</body>
+</html>
+
