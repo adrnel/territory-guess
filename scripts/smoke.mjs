@@ -41,7 +41,7 @@ for (const path of ["/", "/play", "/leaderboard", "/host", "/join"]) {
 
 console.log("\nSolo run");
 const started = await call("/api/game/start", {});
-check(started.status === 200 && started.data.round.level === 1 && started.data.round.turn === 1 && started.data.lives === 3 && started.data.round.splats.length > 80, "starts a run with three lives", JSON.stringify(started).slice(0, 200));
+check(started.status === 200 && started.data.round.level === 1 && started.data.round.turn === 1 && started.data.lives === 3 && started.data.round.splats.length >= 16, "starts a run with three lives", JSON.stringify(started).slice(0, 200));
 check(!JSON.stringify(started.data).includes("share"), "does not leak the split");
 const gameId = started.data.gameId;
 
@@ -187,7 +187,7 @@ await late.until((p) => p.error, "late joiner rejected");
 check(late.error.code === "in_progress", "nobody can join mid-game");
 
 const send = (player, message) => player.ws.send(JSON.stringify(message));
-const shown = (n) => (p) => p.state.round.number === n && p.state.round.splats.length > 40;
+const shown = (n) => (p) => p.state.round.number === n && p.state.round.splats.length >= 16;
 await Promise.all([alex, jamie].map((p) => p.until(shown(1), "board arrives when the countdown ends")));
 check(Date.now() + jamie.offset >= jamie.state.round.startsAt - 50, "board appears only once guessing is allowed");
 check(jamie.state.round.endsAt - jamie.state.round.startsAt === 6000, "five seconds to guess, after a second for the board to appear");

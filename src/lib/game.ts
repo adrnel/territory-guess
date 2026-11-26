@@ -51,22 +51,30 @@ export function seededRng(seed: number): Rng {
   };
 }
 
-/** Below this, the edge of a territory would run through ground no blob reaches and turn ragged. */
-const MIN_CUT = 0.12;
+/**
+ * A lone blob shows as a circle this fraction of its reach across, when the
+ * cut is at IDEAL_CUT. The rest of its reach is the soft fringe that lets two
+ * neighbouring circles join with a rounded neck instead of a sharp corner.
+ */
+const VISIBLE = 0.644;
+const IDEAL_CUT = 0.2;
+/** A cut outside this range would make the circles visibly swell or shrink into lumps. */
+const CUT_RANGE = [0.11, 0.31];
 
 /**
- * All of a board's blobs are one colour: islands of it in a sea of the other.
- * The islands are always the colour with less of the board, so they stay
- * separate, rounded shapes rather than swallowing everything.
+ * All of a board's blobs are one colour: circles of it on a ground of the
+ * other. They are always the colour with less of the board.
  */
 function scatter(color: 0 | 1, count: number, rng: Rng): Splats {
   const splats: Splats = [];
   for (let i = 0; i < count; i++) {
+    // Mostly big circles, with the odd small one. Sizes are the visible radius, in board-widths.
+    const radius = rng() < 0.25 ? 0.01 + rng() * 0.012 : 0.032 + rng() * 0.038;
     // Centres spill a little past the edges so the border looks like the middle.
     splats.push(
-      Math.round((rng() * 1.1 - 0.05) * UNIT),
-      Math.round((rng() * 1.1 - 0.05) * UNIT),
-      Math.round((0.05 + rng() ** 2 * 0.11) * UNIT),
+      Math.round((rng() * 1.08 - 0.04) * UNIT),
+      Math.round((rng() * 1.08 - 0.04) * UNIT),
+      Math.round((radius / VISIBLE) * UNIT),
       color,
     );
   }
@@ -91,7 +99,7 @@ export function fieldOf(splats: Splats): Float32Array {
       const dy2 = (row - cy) * (row - cy);
       for (let col = left; col <= right; col++) {
         const q = 1 - ((col - cx) * (col - cx) + dy2) * inverse;
-        if (q > 0) field[row * GRID_W + col] += sign * q * q;
+        if (q > 0) field[row * GRID_W + col] += sign * q * q * q;
       }
     }
   }
@@ -119,13 +127,31 @@ export function shareOf(board: Board): number {
 export function generateBoard(target0: number, rng: Rng = Math.random): Board {
   const islands: 0 | 1 = target0 < 0.5 || (target0 === 0.5 && rng() < 0.5) ? 0 : 1;
   const minority = Math.min(target0, 1 - target0);
-  for (let count = Math.round(24 + 150 * minority); ; count = Math.round(count * 1.3)) {
-    const splats = scatter(islands, count, rng);
+  // Scatter more circles than needed, then use just enough of them that the
+  // cut giving the wanted share is close to the ideal one. More circles in
+  // play means a higher cut, so the right number can be searched for.
+  const pool = scatter(islands, MAX_BLOBS, rng);
+  let low = 4;
+  let high = MAX_BLOBS;
+  let count = Math.min(high, Math.max(low, Math.round(-Math.log(1 - minority) * 72)));
+  let best: Board | null = null;
+  for (let attempt = 0; attempt < 7; attempt++) {
+    const splats = pool.slice(0, count * 4);
     const cut = cutFor(fieldOf(splats), target0);
-    // Too few blobs to make up the share cleanly: throw again with more.
-    if (Math.abs(cut) >= MIN_CUT || count > 400) return { splats, cut };
+    const size = Math.abs(cut);
+    if (!best || Math.abs(size - IDEAL_CUT) < Math.abs(Math.abs(best.cut) - IDEAL_CUT)) best = { splats, cut };
+    if (size >= CUT_RANGE[0] && size <= CUT_RANGE[1]) break;
+    if (size < IDEAL_CUT) low = count + 1; else high = count - 1;
+    if (low > high) break;
+    count = attempt === 0
+      ? Math.min(high, Math.max(low, Math.round(count * (size < IDEAL_CUT ? 1.35 : 0.75))))
+      : Math.round((low + high) / 2);
   }
+  return best!;
 }
+
+/** The most circles a board can use. */
+const MAX_BLOBS = 220;
 
 /** The value that `above` (0-1) of the field lies above. */
 function cutFor(field: Float32Array, above: number): number {

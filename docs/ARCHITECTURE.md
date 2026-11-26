@@ -133,18 +133,24 @@ The first version threw hundreds of flat circles, which looked speckled and
 left the final split to chance (later circles covered earlier ones). Boards
 are now smooth and the split is chosen:
 
-1. Scatter blobs of one colour. Each has a centre and a reach, and pulls the
-   ground around it towards its colour, strongest at the centre and fading to
-   nothing at its reach.
-2. Add the pulls up at every cell of a 320×180 grid. Where blobs overlap the
-   pull is stronger, so neighbours merge into one rounded shape.
+1. Scatter blobs of one colour: mostly large, some small. Each has a centre
+   and a reach, and pulls the ground around it towards its colour, strongest
+   at the centre and fading smoothly to nothing at its reach.
+2. Add the pulls up at every cell of a 320×180 grid.
 3. Pick the `cut`: the pull above which a cell counts as that colour. It is
    set to the value that gives exactly the wanted share of cells, so a level 1
    board is 60/40 to within a tenth of a point.
 
-The blobs are always the colour with less of the board (islands in a sea of
-the other), and there are more of them the bigger that share is. Generating
-and measuring a board takes about 3 ms, inside the free plan's CPU limit.
+The look depends on where the cut lands. At a cut of about 0.2 a lone blob
+shows as a clean circle about two thirds of its reach across, and two
+neighbours join with a rounded neck. A much higher or lower cut would swell
+or shrink the circles into lumps. So the generator scatters more blobs than
+it needs and searches for how many of them to use so that the cut for the
+wanted share falls near 0.2: more blobs in play means a higher cut.
+
+The blobs are always the colour with less of the board (circles on a ground
+of the other). Generating and measuring a board takes about 3 ms, inside the
+free plan's CPU limit.
 
 ## Duel rules
 

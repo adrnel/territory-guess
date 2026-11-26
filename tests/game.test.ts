@@ -10,9 +10,10 @@ describe("territory", () => {
     const board = { splats: [5000, 5000, 2000, 0], cut: 0.25 };
     const [a, b] = countTurf(board);
     expect(a + b).toBe(GRID_W * GRID_H);
-    // Inside the cut the pull is (1 - d²/r²)² > 0.25, i.e. d < r/√2: a disc of radius 64/√2 cells.
-    expect(a / (Math.PI * 32 * 64)).toBeGreaterThan(0.97);
-    expect(a / (Math.PI * 32 * 64)).toBeLessThan(1.03);
+    // Inside the cut the pull is (1 - d²/r²)³ > 0.25: a disc, d² < r² × (1 - ∛0.25), with r = 64 cells.
+    const disc = Math.PI * 64 * 64 * (1 - Math.cbrt(0.25));
+    expect(a / disc).toBeGreaterThan(0.97);
+    expect(a / disc).toBeLessThan(1.03);
     expect(shareOf({ splats: [], cut: 0.25 })).toBe(0);
     expect(shareOf({ splats: [], cut: -0.25 })).toBe(100);
   });
@@ -49,15 +50,16 @@ describe("territory", () => {
     for (const target of [0.3, 0.7]) {
       const { splats, cut } = generateBoard(target, rng);
       expect(splats.length % 4).toBe(0);
-      expect(splats.length / 4).toBeGreaterThan(20);
+      expect(splats.length / 4).toBeGreaterThan(12);
       expect(splats.every(Number.isInteger)).toBe(true);
       for (let i = 0; i < splats.length; i += 4) {
         expect(splats[i + 2]).toBeGreaterThan(0);
         expect(splats[i + 2]).toBeLessThan(UNIT / 4);
         expect(splats[i + 3]).toBe(target < 0.5 ? 0 : 1);
       }
-      // Well clear of zero, so the edge never runs through ground no blob reaches.
+      // Near the ideal cut, so a lone blob shows as a circle of the size it was given.
       expect(Math.abs(cut)).toBeGreaterThan(0.1);
+      expect(Math.abs(cut)).toBeLessThan(0.32);
     }
   });
 
