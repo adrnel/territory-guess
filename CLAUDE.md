@@ -24,3 +24,8 @@ the reasons behind it (keep it current when the architecture changes).
   unit tested); `src/server/room-do.ts` should stay a thin wrapper.
 - `scripts/smoke.mjs` imports `src/lib/game.ts` directly, so keep that file to
   plain erasable TypeScript with no imports.
+
+## Shipping
+- The owner has asked for finished work to be merged to `main` without asking
+  each time (requested 2026-11-26). Once tests, type-check and the smoke test
+  pass, merge to `main` and push; that push deploys to Cloudflare.
