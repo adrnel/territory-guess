@@ -51,8 +51,9 @@ export function seededRng(seed: number): Rng {
   };
 }
 
-/** How many circles are painted. Enough to cover the board about twice over. */
-const CIRCLES = 60;
+/** How many circles are painted: the base number, plus more the nearer the split is to even. */
+const CIRCLES_BASE = 12;
+const CIRCLES_PER_SHARE = 46;
 /** How far (in grid cells) each of the three blur passes reaches. Sets how rounded the corners are. */
 const BLUR = 4;
 
@@ -138,32 +139,67 @@ export function generateBoard(target0: number, rng: Rng = Math.random): Board {
   const splats: Splats = [UNIT / 2, UNIT / 2, UNIT * 2, first];
   let owned0 = first === 0 ? cells : 0;
   if (first === 0) grid.fill(1);
-  for (let i = 0; i < CIRCLES; i++) {
+  // Fewer circles means longer unbroken arcs. The colour with less of the board
+  // needs enough circles to reach its share, plus some back-and-forth after.
+  const circles = Math.round(CIRCLES_BASE + CIRCLES_PER_SHARE * Math.min(target0, 1 - target0));
+  for (let i = 0; i < circles; i++) {
     const color = owned0 / cells < target0 ? 0 : 1;
+    const value = color === 0 ? 1 : 0;
     // Mostly big circles, with the odd small one. Radius in board-widths.
     // The last few are small, to bring the split close to the target before the cut is set.
-    const radius = i >= CIRCLES - 6 || rng() < 0.15 ? 0.024 + rng() * 0.012 : 0.042 + rng() * 0.046;
-    const x = Math.round((rng() * 1.06 - 0.03) * UNIT);
-    const y = Math.round((rng() * 1.06 - 0.03) * UNIT);
-    const r = Math.round(radius * UNIT);
-    splats.push(x, y, r, color);
-    // Keep count of who owns what as the paint goes on (the same sums as paint()).
-    const cx = (x / UNIT) * GRID_W - 0.5;
-    const cy = (y / UNIT) * GRID_H - 0.5;
-    const cr = (r / UNIT) * GRID_W;
-    const value = color === 0 ? 1 : 0;
-    const top = Math.max(0, Math.ceil(cy - cr));
-    const bottom = Math.min(GRID_H - 1, Math.floor(cy + cr));
-    for (let row = top; row <= bottom; row++) {
-      const half = Math.sqrt(cr * cr - (row - cy) * (row - cy));
-      const left = Math.max(0, Math.ceil(cx - half));
-      const right = Math.min(GRID_W - 1, Math.floor(cx + half));
-      for (let at = row * GRID_W + left; at <= row * GRID_W + right; at++) {
-        if (grid[at] !== value) { grid[at] = value; owned0 += value ? 1 : -1; }
+    const r = Math.round((i >= circles - 3 || rng() < 0.1 ? 0.028 + rng() * 0.01 : 0.05 + rng() * 0.04) * UNIT);
+    // Try a few places and keep the cleanest. Painting most of the way across
+    // an earlier circle of the other colour leaves a crescent of it behind, so
+    // the best place is one that leaves no crescents; among those, the one
+    // where most of the new circle is on show.
+    let x = 0;
+    let y = 0;
+    let bestCrescents = Infinity;
+    let bestFresh = -1;
+    for (let attempt = 0; attempt < PLACES; attempt++) {
+      const tryX = Math.round((rng() * 1.04 - 0.02) * UNIT);
+      const tryY = Math.round((rng() * 1.04 - 0.02) * UNIT);
+      let crescents = 0;
+      for (let j = 4; j < splats.length; j += 4) {
+        if (splats[j + 3] === color) continue;
+        const apart = Math.hypot(tryX - splats[j], (tryY - splats[j + 1]) / ASPECT);
+        // How much of the earlier circle is left, measured along the line through both centres.
+        const left = splats[j + 2] - r + apart;
+        if (apart < splats[j + 2] + r && left > 0 && left < splats[j + 2] * 1.15) crescents++;
       }
+      if (crescents > bestCrescents) continue;
+      const fresh = stamp(grid, tryX, tryY, r, value, false);
+      if (crescents < bestCrescents || fresh > bestFresh) { bestCrescents = crescents; bestFresh = fresh; x = tryX; y = tryY; }
     }
+    splats.push(x, y, r, color);
+    owned0 += stamp(grid, x, y, r, value, true) * (value ? 1 : -1);
   }
   return { splats, cut: cutFor(blur(Float32Array.from(grid)), target0) };
+}
+
+/** How many places are tried for each circle. */
+const PLACES = 8;
+
+/**
+ * Counts the cells a circle would change to `value` (the same cells paint()
+ * fills), and changes them if `apply` is set.
+ */
+function stamp(grid: Uint8Array, x: number, y: number, r: number, value: number, apply: boolean): number {
+  const cx = (x / UNIT) * GRID_W - 0.5;
+  const cy = (y / UNIT) * GRID_H - 0.5;
+  const cr = (r / UNIT) * GRID_W;
+  const top = Math.max(0, Math.ceil(cy - cr));
+  const bottom = Math.min(GRID_H - 1, Math.floor(cy + cr));
+  let changed = 0;
+  for (let row = top; row <= bottom; row++) {
+    const half = Math.sqrt(cr * cr - (row - cy) * (row - cy));
+    const left = Math.max(0, Math.ceil(cx - half));
+    const right = Math.min(GRID_W - 1, Math.floor(cx + half));
+    for (let at = row * GRID_W + left; at <= row * GRID_W + right; at++) {
+      if (grid[at] !== value) { changed++; if (apply) grid[at] = value; }
+    }
+  }
+  return changed;
 }
 
 /** The value that `above` (0-1) of the field lies above. */

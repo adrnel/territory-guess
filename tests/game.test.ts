@@ -63,9 +63,11 @@ describe("territory", () => {
         expect(splats[i + 2]).toBeLessThan(UNIT / 8);
         colors.push(splats[i + 3]);
       }
-      // Each colour is painted many times, and neither is always the one on top.
-      expect(colors.filter((c) => c === 0).length).toBeGreaterThan(5);
-      expect(colors.filter((c) => c === 1).length).toBeGreaterThan(5);
+      // Each colour is painted several times, and neither is always the one on top.
+      expect(colors.filter((c) => c === 0).length).toBeGreaterThan(2);
+      expect(colors.filter((c) => c === 1).length).toBeGreaterThan(2);
+      // Few enough that each circle keeps a long stretch of its outline.
+      expect(colors.length).toBeLessThanOrEqual(36);
       expect(colors.join("")).toMatch(/01.*10|10.*01/);
       // The cut stays near the middle, where both colours are rounded alike.
       expect(cut).toBeGreaterThan(0.3);

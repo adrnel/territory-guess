@@ -135,11 +135,15 @@ colour on a plain ground, which was smooth but lopsided: one colour was always
 the round shapes and the other always the gaps between them. Boards are now
 made so that both colours get the same treatment and the split is chosen:
 
-1. Fill the board with one colour, then paint about 60 circles over it, mostly
-   large. Each circle goes to whichever colour is short of its target share at
-   that moment, so the two colours keep painting over each other. A colour
-   bulges where it was painted on top and has a round bay where it was painted
-   over.
+1. Fill the board with the colour that is to have more of it, then paint
+   20 to 35 large circles over it (more the nearer the split is to even). Each
+   circle goes to whichever colour is short of its target share at that
+   moment, so the two colours keep painting over each other. A colour bulges
+   where it was painted on top and has a round bay where it was painted over.
+   Each circle is tried in eight places and put where it leaves no crescent
+   of an earlier circle behind and shows as much of itself as possible; that,
+   and keeping the number of circles low, is what keeps the outlines as long
+   clean arcs rather than a jigsaw of short ones.
 2. Paint that onto a 320×180 grid and blur it. Each cell now holds a value
    from 0 (deep in colour 1) to 1 (deep in colour 0).
 3. Pick the `cut`: the value above which a cell counts as colour 0. It is set
