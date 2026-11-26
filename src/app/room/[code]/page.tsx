@@ -174,16 +174,15 @@ function Duel({ room, you, clockOffset, send }: { room: PublicRoom; you: string;
   let markers: Marker[] = [];
   if (result) {
     const theirs = rival ? round.guesses[rival.id] : undefined;
-    const off = (guess: number | null | undefined) => guess == null ? "" : ` (off by ${Math.abs(guess - result.share).toFixed(1)})`;
     markers = [
       ...(mine?.value != null ? [{ label: "You", value: mine.value, tone: "you" as const }] : []),
       ...(theirs?.value != null ? [{ label: rival!.name, value: theirs.value, tone: "rival" as const }] : []),
     ];
     const why = result.bySpeed ? " — equally close, faster lock-in" : "";
     status = result.winnerId === you
-      ? <span className="toast toast-good" data-testid="round-result"><CheckIcon size={24} /> You take the round{why}<em>{off(mine?.value).trim()}</em></span>
+      ? <span className="toast toast-good" data-testid="round-result"><CheckIcon size={24} /> You take the round{why}</span>
       : result.winnerId
-        ? <span className="toast toast-rival" data-testid="round-result">{rival?.name ?? "Opponent"} takes the round{why}<em>{off(theirs?.value).trim()}</em></span>
+        ? <span className="toast toast-rival" data-testid="round-result">{rival?.name ?? "Opponent"} takes the round{why}</span>
         : <span className="toast toast-rival" data-testid="round-result">Dead heat — nobody scores</span>;
   } else if (locked) {
     status = <span className="toast toast-good"><CheckIcon size={24} /> Locked in at {value}% — waiting for {rival?.name ?? "your opponent"}…</span>;
@@ -197,6 +196,20 @@ function Duel({ room, you, clockOffset, send }: { room: PublicRoom; you: string;
       {result ? <>
         <p className="prompt">The real split</p>
         <SplitBar pair={round.pair} value={result.share} markers={markers} />
+        {/* Each guess again in words, tagged the same way as its pin on the bar. */}
+        <ul className="guesses" data-testid="guesses">
+          {markers.map((marker) => {
+            const won = result.winnerId === (marker.tone === "you" ? you : rival?.id);
+            return (
+              <li key={marker.tone} className={`guess${won ? " is-winner" : ""}`}>
+                <span className={`guess-tag guess-tag-${marker.tone}`}>{marker.tone === "you" ? "Your guess" : `${marker.label}\u2019s guess`}</span>
+                <b>{marker.value}%</b>
+                <span className="guess-off">off by {Math.abs(marker.value - result.share).toFixed(1)}</span>
+                {won && <span className="chip chip-green">✓ Wins</span>}
+              </li>
+            );
+          })}
+        </ul>
         {mine?.lockedAt == null && <p className="lb-hint">Time ran out, so your bar counted where you left it.</p>}
       </> : <>
         <div className={`timer${left <= 2000 ? " is-low" : ""}`} role="timer" aria-label={`${Math.ceil(left / 1000)} seconds left`}>

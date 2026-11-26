@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState, type CSSProperties, type FormEvent } from "react";
-import { CheckIcon, CrownIcon, HomeIcon, PlayIcon, StarIcon, TargetIcon, TrophyIcon } from "@/components/Icons";
+import { CheckIcon, ChevronIcon, CrownIcon, HomeIcon, PlayIcon, StarIcon, TargetIcon, TrophyIcon } from "@/components/Icons";
 import LeaderboardList, { type Entry, type RankedEntry } from "@/components/LeaderboardList";
 import NavButton from "@/components/NavButton";
 import Scene from "@/components/Scene";
@@ -52,6 +52,10 @@ export default function PlayPage() {
   const [me, setMe] = useState<RankedEntry | null>(null);
   const [rankToday, setRankToday] = useState<number | null>(null);
   const [top, setTop] = useState<Entry[]>([]);
+
+  // The result's button takes the focus as it appears, so Enter moves on.
+  const advanceButton = useRef<HTMLButtonElement>(null);
+  useEffect(() => { if (feedback) advanceButton.current?.focus({ preventScroll: true }); }, [feedback]);
 
   // Guards against double clicks / key repeats while a request is in flight.
   const busy = useRef(false);
@@ -217,29 +221,33 @@ export default function PlayPage() {
         </div>
         {round ? <>
           <Turf pair={round.pair} splats={round.splats} cut={round.cut} />
-          {!feedback ? <>
-            <p className="prompt">Which colour takes up more territory?</p>
-            <div className="choices">
-              {([0, 1] as const).map((choice) => (
-                <button key={choice} type="button" data-choice={choice} data-quiet
-                  className={`btn btn-big btn-ink${pending === choice ? " is-picked" : ""}`}
-                  style={{ "--ink": colors[choice] } as CSSProperties} disabled={pending !== null}
-                  aria-label={choice === 0 ? "Left colour" : "Right colour"} onClick={() => void choose(choice)}>
-                  <i className="swatch" /> This colour <kbd>{choice + 1}</kbd>
+          {/* The question and its result share one space, sized for the taller of the two, so the page never jumps. */}
+          <div className="answer">
+            <div className={`answer-layer${feedback ? " is-off" : ""}`}>
+              <p className="prompt">Which colour takes up more territory?</p>
+              <div className="choices">
+                {([0, 1] as const).map((choice) => (
+                  <button key={choice} type="button" data-choice={choice} data-quiet
+                    className={`btn btn-big btn-ink${pending === choice ? " is-picked" : ""}`}
+                    style={{ "--ink": colors[choice] } as CSSProperties} disabled={pending !== null || !!feedback}
+                    aria-label={choice === 0 ? "Left colour" : "Right colour"} onClick={() => void choose(choice)}>
+                    <i className="swatch" /> This colour <kbd>{choice + 1}</kbd>
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div className={`answer-layer${feedback ? "" : " is-off"}`}>
+              <SplitBar pair={round.pair} value={feedback?.share ?? 50} />
+              <div className="verdict-row" role="status" aria-live="polite">
+                {feedback && (feedback.correct
+                  ? <span className="toast toast-good" data-testid="verdict"><CheckIcon size={22} /> Correct!</span>
+                  : <span className="toast toast-bad" data-testid="verdict">✕ Wrong · {lives === 0 ? "out of lives" : lives === 1 ? "1 life left" : `${lives} lives left`}</span>)}
+                <button type="button" className="btn btn-yellow" data-testid="advance" ref={advanceButton} onClick={advance}>
+                  {!nextRound ? "See Results" : feedback?.correct ? "Next Level" : "Try Another"} <ChevronIcon size={18} />
                 </button>
-              ))}
+              </div>
             </div>
-          </> : <>
-            <SplitBar pair={round.pair} value={feedback.share} />
-            <div className="status" role="status" aria-live="polite">
-              {feedback.correct
-                ? <span className="toast toast-good" data-testid="verdict"><CheckIcon size={24} /> Correct!</span>
-                : <span className="toast toast-bad" data-testid="verdict">✕ Wrong — {lives === 0 ? "that was your last life" : lives === 1 ? "1 life left" : `${lives} lives left`}</span>}
-            </div>
-            <button type="button" className="btn btn-yellow btn-big" data-testid="advance" autoFocus onClick={advance}>
-              {!nextRound ? "See Results" : feedback.correct ? <><PlayIcon size={24} /> Next Level</> : <><PlayIcon size={24} /> Try Another</>}
-            </button>
-          </>}
+          </div>
         </> : !error && <p className="note loading">Drawing the first map…</p>}
         {error && <>
           <p className="error" role="alert">{error}</p>
