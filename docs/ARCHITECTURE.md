@@ -175,6 +175,8 @@ second for the board to appear) to set a bar to the split they see.
 - Closest to the real split takes the round. If both are equally far out, the
   one who locked in first takes it, and running out the clock counts as
   slowest. If that can't separate them, nobody scores.
+- The round that decides the match is shown like any other. Its result stays
+  up for the usual time, and only then does the room move to the final screen.
 - First to 5 wins. Three rounds in a row that nobody touches end the match, so
   an abandoned room doesn't keep running.
 

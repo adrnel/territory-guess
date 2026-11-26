@@ -13,6 +13,8 @@ type Props = {
   disabled?: boolean;
   /** Guesses pinned to the bar once the real split is shown. */
   markers?: Marker[];
+  /** Keep room under the bar for the pins' labels, whether or not there are any yet. */
+  pins?: boolean;
   inputRef?: Ref<HTMLInputElement>;
 };
 
@@ -22,11 +24,11 @@ const percent = (n: number) => `${Number.isInteger(n) ? n : n.toFixed(1)}%`;
  * A bar split between the two inks. With `onChange` it is a slider for
  * guessing the split; without, it shows a split (and any guesses) read-only.
  */
-export default function SplitBar({ pair, value, onChange, disabled, markers = [], inputRef }: Props) {
+export default function SplitBar({ pair, value, onChange, disabled, markers = [], pins, inputRef }: Props) {
   const [a, b] = COLOR_PAIRS[pair] ?? COLOR_PAIRS[0];
   const style = { "--a": a, "--b": b, "--v": `${value}%` } as CSSProperties;
   return (
-    <div className={`split${onChange ? "" : " split-result"}${disabled ? " is-disabled" : ""}`} style={style}>
+    <div className={`split${onChange ? "" : " split-result"}${disabled ? " is-disabled" : ""}${pins ? " has-pins" : ""}`} style={style}>
       <div className="split-labels" aria-hidden={!!onChange}>
         <b className="split-a" data-testid="share-a">{percent(value)}</b>
         <b className="split-b" data-testid="share-b">{percent(Math.round((100 - value) * 10) / 10)}</b>
@@ -38,7 +40,7 @@ export default function SplitBar({ pair, value, onChange, disabled, markers = []
             onChange={(event) => onChange(Number(event.target.value))} />
         )}
         {markers.map((marker) => (
-          <span key={marker.tone} className={`split-pin split-pin-${marker.tone}`} style={{ left: `${marker.value}%` }}>
+          <span key={marker.tone} className={`split-pin split-pin-${marker.tone}${marker.value > 60 ? " is-far" : ""}`} style={{ left: `${marker.value}%` }}>
             <em>{marker.label} {marker.value}%</em>
           </span>
         ))}

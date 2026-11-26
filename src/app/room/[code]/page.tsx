@@ -170,7 +170,7 @@ function Duel({ room, you, clockOffset, send }: { room: PublicRoom; you: string;
     );
   }
 
-  let status = null;
+  let verdict = null;
   let markers: Marker[] = [];
   if (result) {
     const theirs = rival ? round.guesses[rival.id] : undefined;
@@ -179,50 +179,54 @@ function Duel({ room, you, clockOffset, send }: { room: PublicRoom; you: string;
       ...(theirs?.value != null ? [{ label: rival!.name, value: theirs.value, tone: "rival" as const }] : []),
     ];
     const why = result.bySpeed ? " — equally close, faster lock-in" : "";
-    status = result.winnerId === you
-      ? <span className="toast toast-good" data-testid="round-result"><CheckIcon size={24} /> You take the round{why}</span>
+    verdict = result.winnerId === you
+      ? <span className="toast toast-good" data-testid="round-result"><CheckIcon size={20} /> You take the round{why}</span>
       : result.winnerId
         ? <span className="toast toast-rival" data-testid="round-result">{rival?.name ?? "Opponent"} takes the round{why}</span>
         : <span className="toast toast-rival" data-testid="round-result">Dead heat — nobody scores</span>;
-  } else if (locked) {
-    status = <span className="toast toast-good"><CheckIcon size={24} /> Locked in at {value}% — waiting for {rival?.name ?? "your opponent"}…</span>;
   }
 
   return (
-    <section className="panel panel-game">
+    <section className="panel panel-game panel-duel">
       <h1 className="mode-pill"><PeopleIcon size={20} /> Round {round.number} · First to {room.winScore}</h1>
       <Scoreboard room={room} you={you} />
       <Turf pair={round.pair} splats={round.splats} cut={round.cut} />
-      {result ? <>
-        <p className="prompt">The real split</p>
-        <SplitBar pair={round.pair} value={result.share} markers={markers} />
-        {/* Each guess again in words, tagged the same way as its pin on the bar. */}
-        <ul className="guesses" data-testid="guesses">
-          {markers.map((marker) => {
-            const won = result.winnerId === (marker.tone === "you" ? you : rival?.id);
-            return (
-              <li key={marker.tone} className={`guess${won ? " is-winner" : ""}`}>
-                <span className={`guess-tag guess-tag-${marker.tone}`}>{marker.tone === "you" ? "Your guess" : `${marker.label}\u2019s guess`}</span>
-                <b>{marker.value}%</b>
-                <span className="guess-off">off by {Math.abs(marker.value - result.share).toFixed(1)}</span>
-                {won && <span className="chip chip-green">✓ Wins</span>}
-              </li>
-            );
-          })}
-        </ul>
-        {mine?.lockedAt == null && <p className="lb-hint">Time ran out, so your bar counted where you left it.</p>}
-      </> : <>
-        <div className={`timer${left <= 2000 ? " is-low" : ""}`} role="timer" aria-label={`${Math.ceil(left / 1000)} seconds left`}>
-          <i style={{ width: `${(left / GUESS_MS) * 100}%` }} />
-          <b data-testid="timer">{now < round.startsAt + PAINT_MS ? "Get set…" : `${(left / 1000).toFixed(1)}s`}</b>
+      {/* Guessing and the result share one space, sized for the taller of the two, so the page never jumps. */}
+      <div className="answer">
+        <div className={`answer-layer${result ? " is-off" : ""}`}>
+          <div className={`timer${left <= 2000 ? " is-low" : ""}`} role="timer" aria-label={`${Math.ceil(left / 1000)} seconds left`}>
+            <i style={{ width: `${(left / GUESS_MS) * 100}%` }} />
+            <b>Set the bar to the split you see · <span data-testid="timer">{now < round.startsAt + PAINT_MS ? "get set…" : `${(left / 1000).toFixed(1)}s`}</span></b>
+          </div>
+          <SplitBar pair={round.pair} value={value} onChange={move} disabled={!open} inputRef={slider} pins />
+          <div className="duel-line" role="status" aria-live="polite">
+            {locked && !result
+              ? <span className="toast toast-good"><CheckIcon size={20} /> Locked in at {value}% — waiting for {rival?.name ?? "your opponent"}…</span>
+              : <button type="button" className="btn btn-yellow" data-testid="lock" data-quiet disabled={!open} onClick={lockIn}>Lock In</button>}
+          </div>
         </div>
-        <p className="prompt">Set the bar to the split you see</p>
-        <SplitBar pair={round.pair} value={value} onChange={move} disabled={!open} inputRef={slider} />
-        <button type="button" className="btn btn-yellow btn-big" data-testid="lock" data-quiet disabled={!open} onClick={lockIn}>
-          {locked ? "Locked in" : "Lock In"}
-        </button>
-      </>}
-      <div className="status" role="status" aria-live="polite">{status}</div>
+        <div className={`answer-layer${result ? "" : " is-off"}`}>
+          <div className="duel-line duel-verdict" role="status" aria-live="polite">{verdict}</div>
+          <SplitBar pair={round.pair} value={result?.share ?? 50} markers={markers} pins />
+          {/* Each guess again in words, tagged the same way as its pin on the bar. */}
+          <ul className="guesses" data-testid={result ? "guesses" : undefined}>
+            {(["you", "rival"] as const).map((tone) => {
+              const marker = markers.find((m) => m.tone === tone);
+              if (!result || !marker) return <li key={tone} className="guess" />;
+              const guess = round.guesses[tone === "you" ? you : rival?.id ?? ""];
+              const won = result.winnerId === (tone === "you" ? you : rival?.id);
+              return (
+                <li key={tone} className={`guess${won ? " is-winner" : ""}`}>
+                  <span className={`guess-tag guess-tag-${tone}`}>{tone === "you" ? "Your guess" : `${marker.label}\u2019s guess`}</span>
+                  <b>{marker.value}%</b>
+                  <span className="guess-off">off by {Math.abs(marker.value - result.share).toFixed(1)}{guess?.lockedAt == null ? " · time ran out" : ""}</span>
+                  {won && <span className="chip chip-green">✓ Wins</span>}
+                </li>
+              );
+            })}
+          </ul>
+        </div>
+      </div>
     </section>
   );
 }

@@ -231,6 +231,25 @@ function playOut(room: RoomState, from: number): number {
 }
 
 describe("match", () => {
+  it("shows the deciding round's result for the usual time before the match ends", () => {
+    const { room, now } = playing();
+    room.players[0].score = WIN_SCORE - 1;
+    lock(room, "p1", 1, near(room), now + 1500);
+    lock(room, "p2", 1, far(room), now + 1600);
+    // The match is won, but the room is still on the round's result.
+    expect(room.players[0].score).toBe(WIN_SCORE);
+    expect(room.phase).toBe("playing");
+    expect(room.winnerId).toBeNull();
+    expect(toPublic(room, "p2").round!.result!.winnerId).toBe("p1");
+    expect(nextWake(room)).toBe(now + 1600 + REVEAL_MS);
+    expect(tick(room, now + 1600 + REVEAL_MS - 1)).toBe("idle");
+    expect(tick(room, now + 1600 + REVEAL_MS)).toBe("changed");
+    expect(room.phase).toBe("finished");
+    expect(room.winnerId).toBe("p1");
+    // No extra round was dealt.
+    expect(room.round!.number).toBe(1);
+  });
+
   it("ends when someone reaches the win score", () => {
     const { room, now } = playing();
     playOut(room, now);
@@ -254,6 +273,8 @@ describe("match", () => {
       expect(tick(room, at)).toBe("changed"); // clock runs out, nobody moved
       at += REVEAL_MS;
     }
+    expect(room.phase).toBe("playing"); // the last unplayed round's result is still on screen
+    expect(tick(room, at)).toBe("changed");
     expect(room.phase).toBe("finished");
     expect(room.winnerId).toBe("p2"); // ahead 1-0 when it was called off
     expect(nextWake(room)).toBeNull();

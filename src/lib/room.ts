@@ -287,15 +287,18 @@ function resolve(room: RoomState, now: number) {
   if (winner) winner.score += 1;
   const untouched = Object.values(round.guesses).every((g) => g.lockedAt === null && g.value === DEFAULT_GUESS);
   room.idleRounds = untouched ? room.idleRounds + 1 : 0;
-  if (winner && winner.score >= WIN_SCORE) {
-    finish(room, winner.id);
-  } else if (room.idleRounds >= MAX_IDLE_ROUNDS) {
-    // Nobody is playing: stop here and give it to whoever is ahead, if anyone.
-    const [first, second] = [...room.players].sort((a, b) => b.score - a.score);
-    finish(room, first && first.score > (second?.score ?? 0) ? first.id : null);
-  } else {
-    room.nextRoundAt = now + REVEAL_MS;
-  }
+  // Even the round that decides the match is shown for the usual time before
+  // anything else happens; tick() then either deals again or ends the match.
+  room.nextRoundAt = now + REVEAL_MS;
+}
+
+/** Whether the match is over, and who won it (null if it was called off with the scores level). */
+function verdict(room: RoomState): { winnerId: string | null } | null {
+  const [first, second] = [...room.players].sort((a, b) => b.score - a.score);
+  if (first && first.score >= WIN_SCORE) return { winnerId: first.id };
+  // Nobody is playing: stop here and give it to whoever is ahead, if anyone.
+  if (room.idleRounds >= MAX_IDLE_ROUNDS) return { winnerId: first && first.score > (second?.score ?? 0) ? first.id : null };
+  return null;
 }
 
 function finish(room: RoomState, winnerId: string | null) {
@@ -357,7 +360,10 @@ export function tick(room: RoomState, now: number, rng: Rng = Math.random): "exp
     return "changed";
   }
   if (room.phase === "playing" && room.nextRoundAt !== null && now >= room.nextRoundAt) {
-    dealRound(room, now, now, rng);
+    // The last round's result has had its time on screen.
+    const over = verdict(room);
+    if (over) finish(room, over.winnerId);
+    else dealRound(room, now, now, rng);
     return "changed";
   }
   return "idle";

@@ -14,9 +14,6 @@ Duel details: the bar starts at 50-50, and if the five seconds run out your bar
 counts wherever you left it. If both players are equally close, whoever locked
 in first takes the round. Players who drop out can reconnect.
 
-The home page has a "Try a round" board. It is made and checked entirely in
-the browser, as a taster: nothing is sent to the server and it doesn't count.
-
 The leaderboard shows the top 100 for today, this week, this month and all time
 (calendar periods in UTC; weeks start on Monday), ten per page, plus a "My
 Scores" tab kept on the player's own device.

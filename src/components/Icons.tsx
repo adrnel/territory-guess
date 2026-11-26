@@ -20,5 +20,4 @@ export const CheckIcon = (p: P) => <Svg {...p}><circle cx="12" cy="12" r="10" />
 export const TargetIcon = (p: P) => <Svg {...p}><circle cx="12" cy="12" r="8.5" fill="none" stroke="currentColor" strokeWidth="2.4" /><circle cx="12" cy="12" r="3.2" /></Svg>;
 export const StarIcon = (p: P) => <Svg {...p}><path d="m12 2.5 2.9 6 6.6.9-4.8 4.6 1.2 6.500L12 17.400l-5.9 3.1 1.2-6.500L2.5 9.400l6.6-.9Z" /></Svg>;
 export const GamepadIcon = (p: P) => <Svg {...p}><path d="M7.5 6h9a5.5 5.5 0 0 1 5.4 4.500l.9 5a3 3 0 0 1-5.3 2.400L16 16H8l-1.5 1.900a3 3 0 0 1-5.3-2.400l.9-5A5.5 5.5 0 0 1 7.5 6Z" /><path d="M8 9.500v3M6.5 11h3" stroke="#fff" strokeWidth="1.6" strokeLinecap="round" /><circle cx="15.5" cy="10" r="1" fill="#fff" /><circle cx="17.5" cy="12" r="1" fill="#fff" /></Svg>;
-export const BoltIcon = (p: P) => <Svg {...p}><path d="M13.500 2 5 13.500h5.500L9.500 22 19 10h-5.800Z" /></Svg>;
 export const BackIcon = (p: P) => <Svg {...p}><path d="M19 12H6m5-6-6 6 6 6" fill="none" stroke="currentColor" strokeWidth="2.8" strokeLinecap="round" strokeLinejoin="round" /></Svg>;
