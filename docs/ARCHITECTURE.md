@@ -151,6 +151,9 @@ colours are treated identically:
    which a cell counts as colour 0, set to give exactly the wanted share.
    Because step 2 already got close, the cut stays next to 0.5, where blurring
    rounds both colours' corners equally.
+   The blur is strong (about 3% of the board's width), so the fine detail of
+   where circles overlap is smoothed away and what is left is long, flowing
+   curves: rounded lobes joined by necks.
 
 The browser is sent the circles for the chosen view and the cut, and repeats
 step 3. Generating and measuring a board takes about 4 ms, inside the free

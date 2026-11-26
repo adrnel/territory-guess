@@ -51,8 +51,12 @@ export function seededRng(seed: number): Rng {
   };
 }
 
-/** How far (in grid cells) each of the three blur passes reaches. Sets how rounded the corners are. */
-const BLUR = 4;
+/**
+ * How far (in grid cells) each of the three blur passes reaches. This is large
+ * on purpose: it smooths away everything but the broad sweep of the circles,
+ * leaving long flowing curves instead of an outline made of many short arcs.
+ */
+const BLUR = 10;
 
 /** Paints the circles onto the grid: 1 where colour 0 is on top, 0 where colour 1 is. */
 function paint(splats: Splats): Float32Array {
@@ -124,8 +128,8 @@ const AREA_W = 4;
 const AREA_H = 2.5;
 const COARSE = 48; // cells per board-width
 /** Circles per square board-width: a few very large ones as a base, then the ones that give the look. */
-const BASE_DENSITY = 75;
-const DENSITY = 58;
+const BASE_DENSITY = 62;
+const DENSITY = 48;
 
 /**
  * Makes a stretch of balanced pattern several boards across, then looks for
@@ -148,8 +152,8 @@ export function generateBoard(target0: number, rng: Rng = Math.random): Board {
     }
   };
   // Large circles first, so every part of the area has been painted by something.
-  scatter(AREA_W * AREA_H * BASE_DENSITY, () => 0.09 + rng() * 0.05);
-  scatter(AREA_W * AREA_H * DENSITY, () => (rng() < 0.08 ? 0.024 + rng() * 0.01 : 0.046 + rng() * 0.036));
+  scatter(AREA_W * AREA_H * BASE_DENSITY, () => 0.08 + rng() * 0.04);
+  scatter(AREA_W * AREA_H * DENSITY, () => 0.045 + rng() * 0.03);
 
   // Paint the whole area coarsely and count colour 0's cells in every possible view at once.
   const columns = AREA_W * COARSE;
