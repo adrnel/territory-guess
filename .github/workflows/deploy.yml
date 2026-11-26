@@ -1,0 +1,41 @@
+name: Deploy
+
+# Every push to main is checked, deployed to Cloudflare and then tested live.
+# Needs one repository secret: CLOUDFLARE_API_TOKEN (see README).
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test
+      - name: Check the deploy token is configured
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: |
+          if [ -z "$CLOUDFLARE_API_TOKEN" ]; then
+            echo "::error::Add a CLOUDFLARE_API_TOKEN secret under Settings > Secrets and variables > Actions."
+            exit 1
+          fi
+      - name: Deploy to Cloudflare
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          DO_NOT_TRACK: "1"
+        run: npm run deploy
+      - name: Test the live site
+        run: node scripts/smoke.mjs https://territory-guess.adrnel.workers.dev --no-score
