@@ -10,10 +10,10 @@ type Props = {
 };
 
 function Logo() {
-  return <span className="logo"><span className="logo-a">Turf War</span> <span className="logo-b">Guesser</span></span>;
+  return <span className="logo"><span className="logo-a">Territory</span> <span className="logo-b">Guesser</span></span>;
 }
 
-/** The dark backdrop, ink blots and title shared by every screen. */
+/** The backdrop, corner shapes and title shared by every screen. */
 export default function Scene({ children, variant = "page" }: Props) {
   return (
     <main className={`scene scene-${variant}`}>
@@ -28,9 +28,9 @@ export default function Scene({ children, variant = "page" }: Props) {
         {variant === "home"
           ? <>
             <h1 className="logo-wrap"><Logo /></h1>
-            <p className="tagline">Two inks, one turf. Can you tell who covered more?</p>
+            <p className="tagline">Two colours, one map. Which takes up more territory?</p>
           </>
-          : <NavButton href="/" className="logo-wrap logo-btn" aria-label="Turf War Guesser — back to menu"><Logo /></NavButton>}
+          : <NavButton href="/" className="logo-wrap logo-btn" aria-label="Territory Guesser — back to menu"><Logo /></NavButton>}
         {children}
       </div>
     </main>

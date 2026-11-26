@@ -1,31 +1,41 @@
 /**
- * Turf rules shared by the solo game and the duel. No Cloudflare or browser
+ * Territory rules shared by the solo game and the duel. No Cloudflare or browser
  * code in here, so everything is unit tested and the smoke test can import it.
  */
 
 /** 3-2-1 before the first round of a duel. */
 export const COUNTDOWN_MS = 3000;
 
-/** Two inks per round: [colour 0, colour 1]. */
+/** Two colours per round: [colour 0, colour 1]. */
 export const COLOR_PAIRS = [
-  ["#4f46e5", "#f59e0b"], // indigo vs amber
-  ["#db2777", "#10b981"], // pink vs emerald
-  ["#0ea5e9", "#f97316"], // sky vs orange
-  ["#8b5cf6", "#eab308"], // violet vs yellow
-  ["#d946ef", "#65a30d"], // fuchsia vs lime
+  ["#1f4d43", "#f26a45"], // forest vs coral
+  ["#5b2bd1", "#f7b500"], // violet vs amber
+  ["#1d3f72", "#f0a03c"], // navy vs apricot
+  ["#0e7c86", "#f25f7a"], // teal vs rose
+  ["#7a2e4d", "#e9b949"], // plum vs gold
 ] as const;
 
 /** The board is 16:9. */
 export const ASPECT = 16 / 9;
-/** Splat coordinates are whole numbers out of this, to keep the payload small. */
+/** Blob coordinates are whole numbers out of this, to keep the payload small. */
 export const UNIT = 10000;
+/** The grid the territory is measured on (and that the browser smooths when drawing). */
+export const GRID_W = 320;
+export const GRID_H = 180;
 
 /**
- * Circles in painting order, flattened: x, y, radius, colour (0 or 1), repeated.
- * x and the radius are in UNITs of the board's width, y in UNITs of its height.
- * Later circles paint over earlier ones.
+ * Soft blobs, flattened: x, y, reach, colour (0 or 1), repeated. x and the
+ * reach are in UNITs of the board's width, y in UNITs of its height. Each blob
+ * pulls the ground around it towards its colour, fading to nothing at its reach.
  */
 export type Splats = number[];
+/**
+ * A board: the blobs, plus the cut. Every point is pulled one way by colour 0's
+ * blobs and the other by colour 1's; it belongs to colour 0 where the net pull
+ * is above the cut. Blobs of one colour merge smoothly, and the two colours
+ * cover the whole board between them.
+ */
+export type Board = { splats: Splats; cut: number };
 
 export type Rng = () => number;
 
@@ -41,78 +51,114 @@ export function seededRng(seed: number): Rng {
   };
 }
 
-const MAX_SPLATS = 800;
-/** Paint 150% of the board so little of the background is left showing. */
-const FILL = 1.5;
+/** Below this, the edge of a territory would run through ground no blob reaches and turn ragged. */
+const MIN_CUT = 0.12;
 
 /**
- * Ported from the original game: throw circles at random until each colour
- * has painted its share of the target area, always painting whichever colour
- * is further behind. `target0` is colour 0's share of the paint (0-1); what
- * ends up visible differs because splats overlap.
+ * All of a board's blobs are one colour: islands of it in a sea of the other.
+ * The islands are always the colour with less of the board, so they stay
+ * separate, rounded shapes rather than swallowing everything.
  */
-export function generateSplats(target0: number, rng: Rng = Math.random): Splats {
-  const total = FILL / ASPECT; // in board-widths squared
-  const targets = [total * target0, total * (1 - target0)];
-  const painted = [0, 0];
+function scatter(color: 0 | 1, count: number, rng: Rng): Splats {
   const splats: Splats = [];
-  for (let count = 0; count < MAX_SPLATS; count++) {
-    const need0 = painted[0] < targets[0];
-    const need1 = painted[1] < targets[1];
-    if (!need0 && !need1) break;
-    const color = need0 && need1
-      ? (painted[0] / targets[0] <= painted[1] / targets[1] ? 0 : 1)
-      : need0 ? 0 : 1;
-    const x = Math.round(rng() * UNIT);
-    const y = Math.round(rng() * UNIT);
-    const r = Math.round(((rng() * 0.08 + 0.03) / 2) * UNIT);
-    splats.push(x, y, r, color);
-    painted[color] += Math.PI * (r / UNIT) ** 2;
+  for (let i = 0; i < count; i++) {
+    // Centres spill a little past the edges so the border looks like the middle.
+    splats.push(
+      Math.round((rng() * 1.1 - 0.05) * UNIT),
+      Math.round((rng() * 1.1 - 0.05) * UNIT),
+      Math.round((0.05 + rng() ** 2 * 0.11) * UNIT),
+      color,
+    );
   }
   return splats;
 }
 
-const GRID_W = 320;
-const GRID_H = 180;
-
-/** How many grid cells each colour ends up owning once every splat is painted. */
-export function countTurf(splats: Splats): [number, number] {
-  const grid = new Uint8Array(GRID_W * GRID_H);
+/** The net pull towards colour 0 at the centre of every grid cell, row by row. */
+export function fieldOf(splats: Splats): Float32Array {
+  const field = new Float32Array(GRID_W * GRID_H);
   for (let i = 0; i + 3 < splats.length; i += 4) {
-    const cx = (splats[i] / UNIT) * GRID_W;
-    const cy = (splats[i + 1] / UNIT) * GRID_H;
-    const r = (splats[i + 2] / UNIT) * GRID_W;
-    const mark = splats[i + 3] === 0 ? 1 : 2;
-    const top = Math.max(0, Math.ceil(cy - r - 0.5));
-    const bottom = Math.min(GRID_H - 1, Math.floor(cy + r - 0.5));
+    const cx = (splats[i] / UNIT) * GRID_W - 0.5;
+    const cy = (splats[i + 1] / UNIT) * GRID_H - 0.5;
+    const reach = (splats[i + 2] / UNIT) * GRID_W;
+    if (!(reach > 0)) continue;
+    const sign = splats[i + 3] === 0 ? 1 : -1;
+    const inverse = 1 / (reach * reach);
+    const top = Math.max(0, Math.ceil(cy - reach));
+    const bottom = Math.min(GRID_H - 1, Math.floor(cy + reach));
+    const left = Math.max(0, Math.ceil(cx - reach));
+    const right = Math.min(GRID_W - 1, Math.floor(cx + reach));
     for (let row = top; row <= bottom; row++) {
-      const dy = row + 0.5 - cy;
-      const half = Math.sqrt(r * r - dy * dy);
-      if (!(half >= 0)) continue;
-      const left = Math.max(0, Math.ceil(cx - half - 0.5));
-      const right = Math.min(GRID_W - 1, Math.floor(cx + half - 0.5));
-      if (left <= right) grid.fill(mark, row * GRID_W + left, row * GRID_W + right + 1);
+      const dy2 = (row - cy) * (row - cy);
+      for (let col = left; col <= right; col++) {
+        const q = 1 - ((col - cx) * (col - cx) + dy2) * inverse;
+        if (q > 0) field[row * GRID_W + col] += sign * q * q;
+      }
     }
   }
-  let a = 0;
-  let b = 0;
-  for (let i = 0; i < grid.length; i++) {
-    if (grid[i] === 1) a++;
-    else if (grid[i] === 2) b++;
-  }
-  return [a, b];
+  return field;
 }
 
-/** Colour 0's share of the painted turf, as a percentage with one decimal place. */
-export function shareOf(splats: Splats): number {
-  const [a, b] = countTurf(splats);
-  return a + b === 0 ? 50 : Math.round((a / (a + b)) * 1000) / 10;
+/** How many grid cells each colour owns. */
+export function countTurf(board: Board): [number, number] {
+  const field = fieldOf(board.splats);
+  let a = 0;
+  for (let i = 0; i < field.length; i++) if (field[i] > board.cut) a++;
+  return [a, field.length - a];
+}
+
+/** Colour 0's share of the board, as a percentage with one decimal place. */
+export function shareOf(board: Board): number {
+  const [a, b] = countTurf(board);
+  return Math.round((a / (a + b)) * 1000) / 10;
+}
+
+/**
+ * Scatters blobs, then sets the cut so that colour 0 ends up with `target0`
+ * (0-1) of the board. The split is chosen, not left to chance.
+ */
+export function generateBoard(target0: number, rng: Rng = Math.random): Board {
+  const islands: 0 | 1 = target0 < 0.5 || (target0 === 0.5 && rng() < 0.5) ? 0 : 1;
+  const minority = Math.min(target0, 1 - target0);
+  for (let count = Math.round(24 + 150 * minority); ; count = Math.round(count * 1.3)) {
+    const splats = scatter(islands, count, rng);
+    const cut = cutFor(fieldOf(splats), target0);
+    // Too few blobs to make up the share cleanly: throw again with more.
+    if (Math.abs(cut) >= MIN_CUT || count > 400) return { splats, cut };
+  }
+}
+
+/** The value that `above` (0-1) of the field lies above. */
+function cutFor(field: Float32Array, above: number): number {
+  let min = Infinity;
+  let max = -Infinity;
+  for (let i = 0; i < field.length; i++) {
+    if (field[i] < min) min = field[i];
+    if (field[i] > max) max = field[i];
+  }
+  // Find the right slice of values with a histogram, then sort only that slice.
+  const BINS = 1024;
+  const scale = (BINS - 1) / (max - min || 1);
+  const counts = new Uint32Array(BINS);
+  for (let i = 0; i < field.length; i++) counts[Math.floor((field[i] - min) * scale)]++;
+  const below = Math.min(field.length - 1, Math.max(1, Math.round(field.length * (1 - above))));
+  let bin = 0;
+  let before = 0;
+  while (before + counts[bin] <= below) before += counts[bin++];
+  const slice: number[] = [];
+  let previous = -Infinity;
+  for (let i = 0; i < field.length; i++) {
+    const at = Math.floor((field[i] - min) * scale);
+    if (at === bin) slice.push(field[i]);
+    else if (at < bin && field[i] > previous) previous = field[i];
+  }
+  slice.sort((a, b) => a - b);
+  const index = below - before;
+  // Halfway between two neighbouring values, so no cell sits exactly on the cut.
+  return ((index > 0 ? slice[index - 1] : previous) + slice[index]) / 2;
 }
 
 /** A round as the server knows it. `share` is the answer and stays on the server until the round is over. */
-export type Round = { pair: number; splats: Splats; share: number };
-/** What a player is shown. */
-export type PublicRound = { level: number; pair: number; splats: Splats };
+export type Round = Board & { pair: number; share: number };
 
 const LEVEL_GAPS = [
   0.20, 0.19, 0.18, 0.17, 0.16, 0.15, 0.14, 0.13, 0.12, 0.11,
@@ -128,39 +174,33 @@ export function gapFor(level: number): number {
   return 0.01;
 }
 
-/** The smallest visible gap, in percentage points, a solo round at this level may have. */
-export function minVisibleGap(level: number): number {
-  return Math.max(0.4, gapFor(level) * 100 * 0.4);
-}
+/** Lives at the start of a solo run. A wrong pick costs one. */
+export const START_LIVES = 3;
 
-/**
- * Solo: which colour has more? Because overlaps shift the visible result, a
- * board is re-thrown if the two colours came out closer than the level means
- * them to be, so there is never a coin-flip round.
- */
+/** What a solo player is shown. `turn` counts boards dealt; `level` only rises on a correct pick. */
+export type PublicRound = Board & { turn: number; level: number; pair: number };
+
+/** Solo: which colour has more? The gap between them is exactly the level's. */
 export function generateSoloRound(level: number, rng: Rng = Math.random): Round {
   const pair = Math.floor(rng() * COLOR_PAIRS.length);
   const half = gapFor(level) / 2;
-  let best: Round | null = null;
-  for (let attempt = 0; attempt < 12; attempt++) {
-    const splats = generateSplats(rng() < 0.5 ? 0.5 + half : 0.5 - half, rng);
-    const share = shareOf(splats);
-    const round = { pair, splats, share };
-    if (Math.abs(share - 50) * 2 >= minVisibleGap(level)) return round;
-    if (!best || Math.abs(share - 50) > Math.abs(best.share - 50)) best = round;
+  const target = rng() < 0.5 ? 0.5 + half : 0.5 - half;
+  for (let attempt = 0; ; attempt++) {
+    const board = generateBoard(target, rng);
+    const share = shareOf(board);
+    // Only a board with large flat patches can miss its target; throw again.
+    if (Math.abs(share - target * 100) <= 0.2 || attempt >= 5) return { pair, ...board, share: share === 50 ? 50.1 : share };
   }
-  // Vanishingly unlikely; nudge an exact tie so there is always an answer.
-  return best!.share === 50 ? { ...best!, share: 50.1 } : best!;
 }
 
-/** The colour (0 or 1) with more turf. */
+/** The colour (0 or 1) with more territory. */
 export const winnerOf = (share: number): 0 | 1 => (share > 50 ? 0 : 1);
 
 /** Duel: guess the split, so the boards range from lopsided to nearly even. */
 export function generateDuelRound(rng: Rng = Math.random): Round {
   const pair = Math.floor(rng() * COLOR_PAIRS.length);
-  const splats = generateSplats(0.15 + rng() * 0.7, rng);
-  return { pair, splats, share: shareOf(splats) };
+  const board = generateBoard(0.15 + rng() * 0.7, rng);
+  return { pair, ...board, share: shareOf(board) };
 }
 
 export const MAX_NAME_LENGTH = 20;
@@ -171,7 +211,7 @@ export function cleanName(value: unknown): string {
   return value.replace(/[\u0000-\u001f\u007f]/g, " ").replace(/\s+/g, " ").trim().slice(0, MAX_NAME_LENGTH).trim();
 }
 
-/** A stable ink colour for a player name. */
+/** A stable colour for a player name. */
 export function avatarColor(name: string): string {
   let hash = 0;
   for (const char of name) hash = (hash * 31 + char.codePointAt(0)!) >>> 0;

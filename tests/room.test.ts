@@ -79,12 +79,14 @@ describe("countdown", () => {
     ready(room, "p2");
     start(room, "p1", T0);
     expect(toPublic(room, "p1").round!.splats).toEqual([]);
+    expect(toPublic(room, "p1").round!.cut).toBe(0);
     expect(nextWake(room)).toBe(T0 + COUNTDOWN_MS);
     expect(lock(room, "p1", 1, 50, T0 + 100)).toBe(false);
     expect(setGuess(room, "p1", 1, 60, T0 + 100)).toBe(false);
     expect(tick(room, T0 + COUNTDOWN_MS - 1)).toBe("idle");
     expect(tick(room, T0 + COUNTDOWN_MS)).toBe("changed");
     expect(toPublic(room, "p1").round!.splats.length).toBeGreaterThan(0);
+    expect(toPublic(room, "p1").round!.cut).toBe(room.round!.cut);
     expect(nextWake(room)).toBe(T0 + COUNTDOWN_MS + PAINT_MS + GUESS_MS);
   });
 });

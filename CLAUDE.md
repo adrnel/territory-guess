@@ -1,6 +1,6 @@
-# Turf War Guesser — project notes for Claude
+# Territory Guesser — project notes for Claude
 
-Guess-the-split paint game. One repo: Next.js (App Router) + React + TypeScript,
+Guess-the-split map game. One repo: Next.js (App Router) + React + TypeScript,
 run on Cloudflare Workers via vinext; D1 for the leaderboard and solo runs; a
 SQLite-backed Durable Object (`Room`) per duel room. Same format as
 `adrnel/matchless`. See README.md, and docs/ARCHITECTURE.md for the design and

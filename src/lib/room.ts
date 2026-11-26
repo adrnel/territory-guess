@@ -67,6 +67,7 @@ export type RoomRound = {
   number: number;
   pair: number;
   splats: Splats;
+  cut: number;
   /** The answer. Never sent before the round is resolved. */
   share: number;
   /** When the board is shown. The clock runs from startsAt + PAINT_MS to endsAt. */
@@ -98,7 +99,7 @@ export type RoomState = {
 export type PublicPlayer = Omit<Player, "token">;
 /** While a round is open an opponent's `value` is null: only whether they have locked in is shared. */
 export type PublicGuess = { value: number | null; lockedAt: number | null };
-/** `splats` is empty until the countdown ends. */
+/** `splats` is empty (and `cut` zero) until the countdown ends. */
 export type PublicRound = Omit<RoomRound, "share" | "guesses"> & { guesses: Record<string, PublicGuess> };
 export type PublicRoom = {
   code: string;
@@ -152,6 +153,7 @@ export function toPublic(room: RoomState, viewerId: string | null = null): Publi
       number: round.number,
       pair: round.pair,
       splats: round.shown ? round.splats : [],
+      cut: round.shown ? round.cut : 0,
       startsAt: round.startsAt,
       endsAt: round.endsAt,
       shown: round.shown,

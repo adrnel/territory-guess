@@ -1,11 +1,11 @@
-# Turf War Guesser architecture
+# Territory Guesser architecture
 
 How the game is put together and why. The format is the one
 [Matchless](https://github.com/adrnel/matchless) uses; this repository started as a copy of it with the rules swapped. For commands and day-to-day use, see the [README](../README.md).
 
 ## In one paragraph
 
-Turf War Guesser is a single program running on Cloudflare Workers. It serves the
+Territory Guesser is a single program running on Cloudflare Workers. It serves the
 pages, answers the game's requests and hosts the duel rooms. Leaderboard
 scores and in-progress solo games live in a D1 database; each duel room
 is a Durable Object. Everything is in one repository, and every push to `main`
@@ -21,10 +21,10 @@ Browser ──HTTPS──▶ Worker (worker/index.ts)
 
 ## What it replaced
 
-The original game was one `index.html` on Vercel. It threw the splats, counted
-the pixels and kept the high score entirely in the browser. That cannot support
+The original game was one `index.html` on Vercel. It threw circles of paint,
+counted the pixels and kept the high score entirely in the browser. That cannot support
 a shared leaderboard (the browser could report any score) or a duel (two
-players need the same board and a referee), so the board is now thrown and
+players need the same board and a referee), so the board is now generated and
 measured on the server and the browser only draws it.
 
 ## Cold starts
@@ -106,11 +106,14 @@ generated in the browser, so there are no audio files to download.
 Anything held in the browser can be read or changed by the player, so the
 browser is treated as a display and an input device only.
 
-- A board is a list of circles (`splats`) thrown by the server. The server
-  paints them onto a 320×180 grid to measure the split (`shareOf` in
-  `src/lib/game.ts`) and keeps that number to itself until the round is over.
-  The browser draws the same circles on a canvas.
-- A solo score is the number of levels cleared, counted by the server. A
+- A board is a list of soft blobs (`splats`) and a `cut`, made by the server
+  (see [How a board is made](#how-a-board-is-made)). The server measures the
+  split on a 320×180 grid (`shareOf` in `src/lib/game.ts`) and keeps that
+  number to itself until the round is over. The browser works out the same
+  grid and smooths it onto a canvas.
+- A solo score is the number of levels cleared, counted by the server, which
+  also keeps the lives. Each board dealt has a `turn` number, and an answer
+  only counts for the current turn. A
   leaderboard entry is copied from the server's record of a finished run, and
   each run can be posted once.
 - In a duel the board is not sent until the countdown ends, each player is
@@ -118,11 +121,30 @@ browser is treated as a display and an input device only.
   is settled (only "they have locked in" is shared), and the room's clock
   decides the deadline and who locked in first.
 
-Limit: the browser has to be given the circles to draw them, so a script can
+Limit: the browser has to be given the blobs to draw the map, so a script can
 measure the board exactly as the server does (the smoke test does just that).
 Server-side scoring stops made-up scores, not a bot. Per-IP rate limits (150
 requests a minute; 12 a minute for starting games, posting scores and creating
 rooms) slow that down.
+
+## How a board is made
+
+The first version threw hundreds of flat circles, which looked speckled and
+left the final split to chance (later circles covered earlier ones). Boards
+are now smooth and the split is chosen:
+
+1. Scatter blobs of one colour. Each has a centre and a reach, and pulls the
+   ground around it towards its colour, strongest at the centre and fading to
+   nothing at its reach.
+2. Add the pulls up at every cell of a 320×180 grid. Where blobs overlap the
+   pull is stronger, so neighbours merge into one rounded shape.
+3. Pick the `cut`: the pull above which a cell counts as that colour. It is
+   set to the value that gives exactly the wanted share of cells, so a level 1
+   board is 60/40 to within a tenth of a point.
+
+The blobs are always the colour with less of the board (islands in a sea of
+the other), and there are more of them the bigger that share is. Generating
+and measuring a board takes about 3 ms, inside the free plan's CPU limit.
 
 ## Duel rules
 
@@ -146,7 +168,7 @@ plain functions with no Cloudflare code in them.**
 
 | Layer | Files | Notes |
 |---|---|---|
-| Rules | `src/lib/game.ts`, `src/lib/room.ts`, `src/lib/periods.ts` | Throwing and measuring a board, solo difficulty, every duel rule, leaderboard periods. Unit tested in `tests/`. |
+| Rules | `src/lib/game.ts`, `src/lib/room.ts`, `src/lib/periods.ts` | Generating and measuring a board, solo difficulty, every duel rule, leaderboard periods. Unit tested in `tests/`. |
 | Server plumbing | `src/app/api/*`, `src/server/*` | Load state, call a rule, save, reply. `room-do.ts` is the Durable Object; `db.ts` holds the schema and queries; `http.ts` has JSON and rate-limit helpers. |
 | Entry point | `worker/index.ts` | Sends WebSocket requests to the right room and everything else to the Next.js app. |
 | Screens | `src/app/*/page.tsx` | Menu, play, leaderboard, host, join, room. |
@@ -161,8 +183,8 @@ without a network, a clock or Cloudflare.
 
 **D1 (`territory-guess-db`)**
 
-- `game_sessions` — one row per solo run: current level, the split of the
-  board on screen, levels cleared, expiry. Abandoned rows are cleared out
+- `runs` — one row per solo run: current level and turn, lives left, the
+  split of the board on screen, levels cleared, expiry. Abandoned rows are cleared out
   occasionally when new games start.
 - `scores` — the leaderboard: name, score, when posted. Daily, weekly, monthly
   and all-time boards are all queries over this one table (calendar periods in

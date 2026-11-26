@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// End-to-end check of a running Turf War Guesser instance (local or deployed):
+// End-to-end check of a running Territory Guesser instance (local or deployed):
 //   node scripts/smoke.mjs                      -> http://localhost:3001
 //   node scripts/smoke.mjs https://your.site    -> a deployment
 // Plays a solo run through the API, posts a score, and runs a short
@@ -31,56 +31,75 @@ async function call(path, body) {
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 // Measure the board the way the server does. (A script can do this too: see "Known limits".)
-const bigger = (round) => (shareOf(round.splats) > 50 ? 0 : 1);
+const bigger = (round) => (shareOf(round) > 50 ? 0 : 1);
 
-console.log(`Turf War Guesser smoke test → ${base}\n\nPages`);
+console.log(`Territory Guesser smoke test → ${base}\n\nPages`);
 for (const path of ["/", "/play", "/leaderboard", "/host", "/join"]) {
   const response = await fetch(base + path);
-  check(response.status === 200 && (await response.text()).includes("Turf War"), `GET ${path}`);
+  check(response.status === 200 && (await response.text()).includes("Territory"), `GET ${path}`);
 }
 
 console.log("\nSolo run");
 const started = await call("/api/game/start", {});
-check(started.status === 200 && started.data.round.level === 1 && started.data.round.splats.length > 100, "starts a run", JSON.stringify(started).slice(0, 200));
+check(started.status === 200 && started.data.round.level === 1 && started.data.round.turn === 1 && started.data.lives === 3 && started.data.round.splats.length > 80, "starts a run with three lives", JSON.stringify(started).slice(0, 200));
 check(!JSON.stringify(started.data).includes("share"), "does not leak the split");
 const gameId = started.data.gameId;
 
-check((await call("/api/game/answer", { gameId: "nope", level: 1, choice: 0 })).status === 400, "rejects a malformed game id");
-check((await call("/api/game/answer", { gameId, level: 1, choice: 2 })).status === 400, "rejects an impossible choice");
-check((await call("/api/game/answer", { gameId: crypto.randomUUID(), level: 1, choice: 0 })).status === 404, "404s an unknown game");
+check((await call("/api/game/answer", { gameId: "nope", turn: 1, choice: 0 })).status === 400, "rejects a malformed game id");
+check((await call("/api/game/answer", { gameId, turn: 1, choice: 2 })).status === 400, "rejects an impossible choice");
+check((await call("/api/game/answer", { gameId: crypto.randomUUID(), turn: 1, choice: 0 })).status === 404, "404s an unknown game");
 check((await call("/api/score", { gameId, name: "Cheater" })).status === 409, "refuses to post an unfinished run");
 check((await call("/api/score", { gameId, name: "Cheater", score: 999999 })).status === 409, "ignores a client-supplied score");
 
 let round = started.data.round;
+let turn = 1;
+const answer = (choice, at = turn) => call("/api/game/answer", { gameId, turn: at, choice });
 const CLEARED = 4;
 for (let level = 1; level <= CLEARED; level++) {
   let result;
   if (level === 2) {
-    const both = await Promise.all([0, 1].map(() => call("/api/game/answer", { gameId, level, choice: bigger(round) })));
+    const both = await Promise.all([0, 1].map(() => answer(bigger(round))));
     const statuses = both.map((r) => r.status).sort();
     check(statuses[0] === 200 && statuses[1] === 409, "simultaneous answers: only one counts", statuses.join(","));
     result = both.find((r) => r.status === 200);
   } else {
-    result = await call("/api/game/answer", { gameId, level, choice: bigger(round) });
+    result = await answer(bigger(round));
   }
   if (result.status !== 200 || !result.data.correct) check(false, `level ${level}`, JSON.stringify(result).slice(0, 200));
   if (level === 1) {
-    check(result.data.share === shareOf(round.splats), `reveals the split after the guess (${result.data.share}%)`);
-    check((await call("/api/game/answer", { gameId, level: 1, choice: 0 })).status === 409, "rejects an answer for an old level");
+    check(result.data.share === shareOf(round), `reveals the split after the guess (${result.data.share}%)`);
+    check(Math.abs(Math.abs(result.data.share - 50) - 10) <= 0.2, "level 1 is a 60/40 board");
+    check((await answer(0, 1)).status === 409, "rejects an answer for an old board");
   }
-  if (result.data.score !== level || result.data.finished || result.data.nextRound.level !== level + 1) check(false, `progress after level ${level}`, JSON.stringify(result.data).slice(0, 200));
+  if (result.data.score !== level || result.data.lives !== 3 || result.data.finished || result.data.nextRound.level !== level + 1) check(false, `progress after level ${level}`, JSON.stringify(result.data).slice(0, 200));
   round = result.data.nextRound;
+  turn += 1;
 }
-check(true, `clears ${CLEARED} levels, one point each`);
-const wrong = await call("/api/game/answer", { gameId, level: CLEARED + 1, choice: 1 - bigger(round) });
-check(wrong.status === 200 && wrong.data.correct === false && wrong.data.finished === true && wrong.data.score === CLEARED && !wrong.data.nextRound,
-  "a wrong guess ends the run and keeps the score", JSON.stringify(wrong.data));
-check((await call("/api/game/answer", { gameId, level: CLEARED + 1, choice: bigger(round) })).status === 409, "rejects answers after the run ends");
+check(true, `clears ${CLEARED} levels, one point each, keeping all three lives`);
+
+const miss = await answer(1 - bigger(round));
+check(miss.status === 200 && miss.data.correct === false && miss.data.lives === 2 && miss.data.finished === false && miss.data.score === CLEARED,
+  "a wrong pick costs a life but not the run", JSON.stringify(miss.data).slice(0, 200));
+check(miss.data.nextRound.level === CLEARED + 1 && miss.data.nextRound.turn === turn + 1 && JSON.stringify(miss.data.nextRound.splats) !== JSON.stringify(round.splats),
+  "and deals a new board at the same level");
+round = miss.data.nextRound; turn += 1;
+const second = await answer(1 - bigger(round));
+check(second.data.lives === 1 && second.data.finished === false, "second wrong pick: one life left");
+round = second.data.nextRound; turn += 1;
+check((await call("/api/score", { gameId, name: "Early" })).status === 409, "a run with lives left can't be posted");
+const wrong = await answer(1 - bigger(round));
+check(wrong.status === 200 && wrong.data.lives === 0 && wrong.data.finished === true && wrong.data.score === CLEARED && !wrong.data.nextRound,
+  "the third wrong pick ends the run and keeps the score", JSON.stringify(wrong.data));
+check((await answer(bigger(round))).status === 409, "rejects answers after the run ends");
 check((await call("/api/score", { gameId, name: "   " })).status === 400, "requires a name");
 const score = CLEARED;
 
 const dud = await call("/api/game/start", {});
-await call("/api/game/answer", { gameId: dud.data.gameId, level: 1, choice: 1 - bigger(dud.data.round) });
+let dudRound = dud.data.round;
+for (let t = 1; t <= 3; t++) {
+  const lost = await call("/api/game/answer", { gameId: dud.data.gameId, turn: t, choice: 1 - bigger(dudRound) });
+  dudRound = lost.data.nextRound;
+}
 check((await call("/api/score", { gameId: dud.data.gameId, name: "Zero" })).status === 409, "a run that cleared nothing can't be posted");
 
 console.log("\nLeaderboard");
@@ -168,13 +187,13 @@ await late.until((p) => p.error, "late joiner rejected");
 check(late.error.code === "in_progress", "nobody can join mid-game");
 
 const send = (player, message) => player.ws.send(JSON.stringify(message));
-const shown = (n) => (p) => p.state.round.number === n && p.state.round.splats.length > 100;
+const shown = (n) => (p) => p.state.round.number === n && p.state.round.splats.length > 40;
 await Promise.all([alex, jamie].map((p) => p.until(shown(1), "board arrives when the countdown ends")));
 check(Date.now() + jamie.offset >= jamie.state.round.startsAt - 50, "board appears only once guessing is allowed");
 check(jamie.state.round.endsAt - jamie.state.round.startsAt === 6000, "five seconds to guess, after a second for the board to appear");
 
 // Round 1: Alex is closest; Jamie locks in first but further out.
-let truth = shareOf(alex.state.round.splats);
+let truth = shareOf(alex.state.round);
 const off = truth > 50 ? -20 : 20;
 send(jamie, { type: "lock", round: 1, value: Math.round(truth) + off });
 await alex.until((p) => p.state.round.guesses[jamie.you].lockedAt !== null, "rival's lock-in is announced");
@@ -191,7 +210,7 @@ check(jamie.state.round.guesses[alex.you].value === Math.round(truth) && jamie.s
 // Round 2: both pick the same number; the faster lock-in takes it.
 await Promise.all([alex, jamie].map((p) => p.until(shown(2), "next round dealt")));
 check(alex.state.round.result === null && alex.state.round.guesses[alex.you].value === 50, "next round is dealt automatically, bar back at 50");
-truth = shareOf(alex.state.round.splats);
+truth = shareOf(alex.state.round);
 send(jamie, { type: "lock", round: 2, value: Math.round(truth) });
 await sleep(250);
 send(alex, { type: "lock", round: 2, value: Math.round(truth) });
@@ -200,7 +219,7 @@ check(alex.state.round.result.winnerId === jamie.you && alex.state.round.result.
 
 // Round 3: nobody locks in. Alex drags the bar and leaves it; Jamie never touches theirs.
 await Promise.all([alex, jamie].map((p) => p.until(shown(3), "round 3 dealt")));
-truth = shareOf(alex.state.round.splats);
+truth = shareOf(alex.state.round);
 const left = Math.round(truth) === 50 ? 49 : Math.round(truth);
 send(alex, { type: "set", round: 3, value: 10 });
 send(alex, { type: "set", round: 3, value: left });

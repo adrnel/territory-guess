@@ -1,51 +1,68 @@
 import { describe, expect, it } from "vitest";
 import {
-  avatarColor, cleanName, COLOR_PAIRS, countTurf, gapFor, generateDuelRound, generateSoloRound, generateSplats,
-  MAX_NAME_LENGTH, minVisibleGap, seededRng, shareOf, UNIT, winnerOf,
+  avatarColor, cleanName, COLOR_PAIRS, countTurf, fieldOf, gapFor, generateBoard, generateDuelRound, generateSoloRound,
+  GRID_H, GRID_W, MAX_NAME_LENGTH, seededRng, shareOf, START_LIVES, UNIT, winnerOf,
 } from "../src/lib/game";
 
-describe("turf", () => {
-  it("counts a single colour as all of the turf", () => {
-    expect(shareOf([5000, 5000, 2000, 0])).toBe(100);
-    expect(shareOf([5000, 5000, 2000, 1])).toBe(0);
-    expect(shareOf([])).toBe(50);
+describe("territory", () => {
+  it("gives the ground around a blob to its colour", () => {
+    // One colour-0 blob in the middle, reaching a fifth of the board's width.
+    const board = { splats: [5000, 5000, 2000, 0], cut: 0.25 };
+    const [a, b] = countTurf(board);
+    expect(a + b).toBe(GRID_W * GRID_H);
+    // Inside the cut the pull is (1 - d²/r²)² > 0.25, i.e. d < r/√2: a disc of radius 64/√2 cells.
+    expect(a / (Math.PI * 32 * 64)).toBeGreaterThan(0.97);
+    expect(a / (Math.PI * 32 * 64)).toBeLessThan(1.03);
+    expect(shareOf({ splats: [], cut: 0.25 })).toBe(0);
+    expect(shareOf({ splats: [], cut: -0.25 })).toBe(100);
   });
 
-  it("lets later splats paint over earlier ones", () => {
-    const under = [5000, 5000, 2000, 0];
-    expect(shareOf([...under, 5000, 5000, 2000, 1])).toBe(0);
-    expect(shareOf([...under, 5000, 5000, 1000, 1])).toBeGreaterThan(60);
+  it("pulls the other way for colour 1", () => {
+    const zero = fieldOf([5000, 5000, 2000, 0]);
+    const one = fieldOf([5000, 5000, 2000, 1]);
+    const middle = (GRID_H / 2) * GRID_W + GRID_W / 2;
+    expect(zero[middle]).toBeCloseTo(1, 2);
+    expect(one[middle]).toBeCloseTo(-1, 2);
+    expect(zero[0]).toBe(0);
   });
 
-  it("measures two equal, separate circles as an even split", () => {
-    const [a, b] = countTurf([2500, 5000, 1500, 0, 7500, 5000, 1500, 1]);
-    expect(a).toBe(b);
-    expect(a).toBeGreaterThan(0);
+  it("merges neighbouring blobs into one territory", () => {
+    const apart = countTurf({ splats: [2500, 5000, 1500, 0, 7500, 5000, 1500, 0], cut: 0.25 })[0];
+    const touching = countTurf({ splats: [4400, 5000, 1500, 0, 5600, 5000, 1500, 0], cut: 0.25 })[0];
+    const one = countTurf({ splats: [5000, 5000, 1500, 0], cut: 0.25 })[0];
+    expect(apart).toBe(one * 2);
+    expect(touching).toBeGreaterThan(one);
+    expect(touching).toBeLessThan(one * 2);
   });
 
-  it("measures area in proportion to the radius squared", () => {
-    const [a, b] = countTurf([2500, 5000, 2000, 0, 7500, 5000, 1000, 1]);
-    expect(a / b).toBeGreaterThan(3.8);
-    expect(a / b).toBeLessThan(4.2);
-  });
-
-  it("throws whole-number splats that stay on the board and cover most of it", () => {
-    const splats = generateSplats(0.5, seededRng(1));
-    expect(splats.length % 4).toBe(0);
-    expect(splats.length / 4).toBeGreaterThan(100);
-    expect(splats.length / 4).toBeLessThanOrEqual(800);
-    for (let i = 0; i < splats.length; i += 4) {
-      expect(Number.isInteger(splats[i]) && splats[i] >= 0 && splats[i] <= UNIT).toBe(true);
-      expect(Number.isInteger(splats[i + 1]) && splats[i + 1] >= 0 && splats[i + 1] <= UNIT).toBe(true);
-      expect(splats[i + 2]).toBeGreaterThan(0);
-      expect([0, 1]).toContain(splats[i + 3]);
+  it("hits the split it is asked for", () => {
+    const rng = seededRng(9);
+    for (const target of [0.1, 0.25, 0.4, 0.495, 0.5, 0.505, 0.6, 0.85]) {
+      for (let i = 0; i < 8; i++) {
+        expect(Math.abs(shareOf(generateBoard(target, rng)) - target * 100)).toBeLessThanOrEqual(0.1);
+      }
     }
-    const [a, b] = countTurf(splats);
-    expect((a + b) / (320 * 180)).toBeGreaterThan(0.6);
+  });
+
+  it("sends whole-number blobs of a single colour, the one with less of the board", () => {
+    const rng = seededRng(1);
+    for (const target of [0.3, 0.7]) {
+      const { splats, cut } = generateBoard(target, rng);
+      expect(splats.length % 4).toBe(0);
+      expect(splats.length / 4).toBeGreaterThan(20);
+      expect(splats.every(Number.isInteger)).toBe(true);
+      for (let i = 0; i < splats.length; i += 4) {
+        expect(splats[i + 2]).toBeGreaterThan(0);
+        expect(splats[i + 2]).toBeLessThan(UNIT / 4);
+        expect(splats[i + 3]).toBe(target < 0.5 ? 0 : 1);
+      }
+      // Well clear of zero, so the edge never runs through ground no blob reaches.
+      expect(Math.abs(cut)).toBeGreaterThan(0.1);
+    }
   });
 
   it("is repeatable for a given seed", () => {
-    expect(generateSplats(0.4, seededRng(7))).toEqual(generateSplats(0.4, seededRng(7)));
+    expect(generateBoard(0.4, seededRng(7))).toEqual(generateBoard(0.4, seededRng(7)));
   });
 });
 
@@ -60,13 +77,14 @@ describe("solo rounds", () => {
     for (let level = 2; level <= 60; level++) expect(gapFor(level)).toBeLessThanOrEqual(gapFor(level - 1));
   });
 
-  it("always has a clear answer, at every level", () => {
+  it("puts the two colours exactly the level's gap apart", () => {
     const rng = seededRng(42);
     for (const level of [1, 5, 10, 16, 22, 30, 45, 80]) {
-      for (let i = 0; i < 15; i++) {
+      for (let i = 0; i < 10; i++) {
         const round = generateSoloRound(level, rng);
-        expect(round.share).toBe(shareOf(round.splats));
-        expect(Math.abs(round.share - 50) * 2).toBeGreaterThanOrEqual(minVisibleGap(level));
+        expect(round.share).toBe(shareOf(round));
+        expect(round.share).not.toBe(50);
+        expect(Math.abs(Math.abs(round.share - 50) * 2 - gapFor(level) * 100)).toBeLessThanOrEqual(0.41);
         expect(round.pair).toBeGreaterThanOrEqual(0);
         expect(round.pair).toBeLessThan(COLOR_PAIRS.length);
       }
@@ -81,9 +99,13 @@ describe("solo rounds", () => {
     expect(first).toBeLessThan(130);
   });
 
-  it("names the colour with more turf", () => {
+  it("names the colour with more territory", () => {
     expect(winnerOf(50.1)).toBe(0);
     expect(winnerOf(49.9)).toBe(1);
+  });
+
+  it("starts with three lives", () => {
+    expect(START_LIVES).toBe(3);
   });
 });
 

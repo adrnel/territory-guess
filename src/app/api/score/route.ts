@@ -22,7 +22,7 @@ export async function POST(request: Request) {
     // request. UNIQUE(game_id) means each game can only be posted once.
     const inserted = await db.prepare(
       `INSERT INTO scores (game_id, name, score, created_at)
-       SELECT id, ?, score, ? FROM game_sessions
+       SELECT id, ?, score, ? FROM runs
        WHERE id = ? AND completed_at IS NOT NULL AND score > 0 AND expires_at > ?
        ON CONFLICT(game_id) DO NOTHING
        RETURNING id`,

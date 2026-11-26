@@ -6,15 +6,20 @@ import { env } from "cloudflare:workers";
  * for local development, tests or deployment.
  */
 const SCHEMA = [
-  `CREATE TABLE IF NOT EXISTS game_sessions (
+  // Solo runs in progress. (`game_sessions` was the first version of this table,
+  // from before lives; it only ever held unfinished games, so it is dropped.)
+  `DROP TABLE IF EXISTS game_sessions`,
+  `CREATE TABLE IF NOT EXISTS runs (
     id TEXT PRIMARY KEY,
     score INTEGER NOT NULL DEFAULT 0 CHECK(score >= 0),
     level INTEGER NOT NULL DEFAULT 1 CHECK(level >= 1),
+    turn INTEGER NOT NULL DEFAULT 1 CHECK(turn >= 1),
+    lives INTEGER NOT NULL CHECK(lives >= 0),
     share REAL NOT NULL CHECK(share BETWEEN 0 AND 100),
     expires_at INTEGER NOT NULL,
     completed_at INTEGER
   )`,
-  `CREATE INDEX IF NOT EXISTS idx_sessions_expiry ON game_sessions (expires_at)`,
+  `CREATE INDEX IF NOT EXISTS idx_runs_expiry ON runs (expires_at)`,
   `CREATE TABLE IF NOT EXISTS scores (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     game_id TEXT NOT NULL UNIQUE,

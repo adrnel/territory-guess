@@ -193,7 +193,7 @@ function Duel({ room, you, clockOffset, send }: { room: PublicRoom; you: string;
     <section className="panel panel-game">
       <h1 className="mode-pill"><PeopleIcon size={20} /> Round {round.number} · First to {room.winScore}</h1>
       <Scoreboard room={room} you={you} />
-      <Turf pair={round.pair} splats={round.splats} />
+      <Turf pair={round.pair} splats={round.splats} cut={round.cut} />
       {result ? <>
         <p className="prompt">The real split</p>
         <SplitBar pair={round.pair} value={result.share} markers={markers} />

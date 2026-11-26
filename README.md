@@ -1,10 +1,11 @@
-# Turf War Guesser
+# Territory Guesser
 
-Two inks are splattered over a board. Work out who covered more.
+Two colours share a map. Work out which takes up more of it.
 
-- **Solo Run** — pick the colour with more turf. Each level the two are closer
-  together; a wrong pick ends the run. Your score is the number of levels
-  cleared, and it can go on the global leaderboard.
+- **Solo Run** — pick the colour with more territory. Level 1 is a 60/40
+  split and each level the two get closer. You have three lives: a wrong pick
+  costs one and deals a new map at the same level. Your score is the number
+  of levels cleared, and it can go on the global leaderboard.
 - **Duel** — share a 6-character room code or invite link with a friend. Each
   round you both see the same board and have five seconds to set a bar to the
   split you think it is. Closest wins the round; first to 5 wins.
@@ -17,8 +18,8 @@ The leaderboard shows the top 100 for today, this week, this month and all time
 (calendar periods in UTC; weeks start on Monday), ten per page, plus a "My
 Scores" tab kept on the player's own device.
 
-Scores can't be made up by the browser: the server throws each board, measures
-the split, keeps it to itself until you have guessed, and counts the levels.
+Scores can't be made up by the browser: the server draws each map, sets the
+split, keeps it to itself until you have guessed, and counts the levels and lives.
 
 Everything runs on **Cloudflare's free plan**, in the same format as
 [Matchless](https://github.com/adrnel/matchless).
@@ -49,7 +50,7 @@ Local data lives in `.wrangler/` (delete it to reset).
 |---|---|
 | `npm run dev` | Dev server with hot reload |
 | `npm run build` / `npm run preview` | Production build / serve it locally |
-| `npm test` | Unit tests for the turf and duel rules |
+| `npm test` | Unit tests for the map and duel rules |
 | `npm run smoke` | End-to-end test of a running instance (`npm run smoke -- https://your-url` for a deployment) |
 | `npm run typecheck` | Generate Worker types and type-check |
 | `npm run deploy` | Build and deploy to Cloudflare |
@@ -80,7 +81,7 @@ nothing has to be set up by hand.
 ```
 cloudflare.config.ts     Worker name, bindings (D1, Durable Object, rate limits)
 worker/index.ts          Worker entry: WebSocket route → Room, everything else → Next.js
-src/lib/game.ts          Throwing a board, measuring the split, solo difficulty
+src/lib/game.ts          Generating a map, measuring the split, solo difficulty
 src/lib/room.ts          Duel rules as pure functions (unit tested)
 src/server/room-do.ts    Room Durable Object: sockets, storage, timers
 src/server/db.ts         D1 schema + leaderboard queries
@@ -95,8 +96,8 @@ tests/                   Unit tests
 
 | Method | Route | Purpose |
 |---|---|---|
-| POST | `/api/game/start` | Start a solo run; returns the first board (never the split) |
-| POST | `/api/game/answer` | `{ gameId, level, choice }` (choice `0` or `1`) → result, the split, next board |
+| POST | `/api/game/start` | Start a solo run; returns the first map (never the split) and the lives |
+| POST | `/api/game/answer` | `{ gameId, turn, choice }` (choice `0` or `1`) → result, the split, lives left, next map |
 | POST | `/api/score` | `{ gameId, name }` → post a finished run to the leaderboard |
 | GET | `/api/leaderboard` | Top 100, 10 per page: `?period=day\|week\|month\|all&page=1` (`&entry=<id>` also returns that entry's rank in the period) |
 | POST | `/api/rooms` | Create a duel room; returns its code |
@@ -104,8 +105,9 @@ tests/                   Unit tests
 
 ## Known limits
 
-- The browser is sent the circles so it can draw them, which means a script
-  can measure a board as exactly as the server does. Server-side scoring stops
+- The browser is sent the blobs so it can draw the map, which means a script
+  can measure it as exactly as the server does. Server-side scoring stops
   fake scores but not a bot. Rate limits slow this down; they don't prevent it.
-- The split is measured on a 320×180 grid, so the last decimal place can
-  differ slightly from what a pixel-perfect count of your screen would give.
+- The split is measured on a 320×180 grid and the browser smooths that grid
+  up to your screen, so a pixel-perfect count of what you see can differ in
+  the last decimal place.

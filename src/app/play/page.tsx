@@ -7,14 +7,14 @@ import NavButton from "@/components/NavButton";
 import Scene from "@/components/Scene";
 import SplitBar from "@/components/SplitBar";
 import Turf from "@/components/Turf";
-import { COLOR_PAIRS, MAX_NAME_LENGTH, type PublicRound } from "@/lib/game";
+import { COLOR_PAIRS, MAX_NAME_LENGTH, START_LIVES, type PublicRound } from "@/lib/game";
 import { burst, celebrate, useCountUp } from "@/lib/juice";
 import { play } from "@/lib/sound";
 import { addMyScore, getBest, getName, saveBest, saveMyEntryId, saveName } from "@/lib/storage";
 
 type Choice = 0 | 1;
 type Feedback = { choice: Choice; correct: boolean; share: number };
-type AnswerPayload = { correct: boolean; share: number; score: number; finished: boolean; nextRound?: PublicRound };
+type AnswerPayload = { correct: boolean; share: number; score: number; lives: number; finished: boolean; nextRound?: PublicRound };
 
 async function api<T>(url: string, body?: unknown): Promise<T> {
   const response = await fetch(url, body === undefined ? { cache: "no-store" } : {
@@ -38,6 +38,7 @@ export default function PlayPage() {
   const [round, setRound] = useState<PublicRound | null>(null);
   const [nextRound, setNextRound] = useState<PublicRound | null>(null);
   const [score, setScore] = useState(0);
+  const [lives, setLives] = useState(START_LIVES);
   const [best, setBest] = useState(0);
   const [previousBest, setPreviousBest] = useState(0);
   const [feedback, setFeedback] = useState<Feedback | null>(null);
@@ -58,10 +59,11 @@ export default function PlayPage() {
 
   const start = useCallback(async () => {
     busy.current = true;
-    setError(""); setFeedback(null); setFinished(false); setMe(null); setRound(null); setNextRound(null); setScore(0);
+    setError(""); setFeedback(null); setFinished(false); setMe(null); setRound(null); setNextRound(null); setScore(0); setLives(START_LIVES);
     try {
-      const data = await api<{ gameId: string; round: PublicRound }>("/api/game/start", {});
+      const data = await api<{ gameId: string; lives: number; round: PublicRound }>("/api/game/start", {});
       setGameId(data.gameId);
+      setLives(data.lives);
       setRound(data.round);
       busy.current = false;
     } catch (e) {
@@ -84,15 +86,18 @@ export default function PlayPage() {
     play("tap");
     setError("");
     try {
-      const result = await api<AnswerPayload>("/api/game/answer", { gameId, level: round.level, choice });
+      const result = await api<AnswerPayload>("/api/game/answer", { gameId, turn: round.turn, choice });
       setFeedback({ choice, correct: result.correct, share: result.share });
       setScore(result.score);
+      setLives(result.lives);
       setNextRound(result.nextRound ?? null);
       if (result.correct) {
         play("great", result.score);
         burst(document.querySelector(`[data-choice="${choice}"]`), 22);
       } else {
         play("wrong");
+      }
+      if (result.finished) {
         const old = getBest();
         setPreviousBest(old);
         if (result.score > 0) addMyScore(result.score);
@@ -106,7 +111,7 @@ export default function PlayPage() {
     }
   }, [gameId, round, feedback]);
 
-  /** After a result: on to the next level, or to the results screen if the run is over. */
+  /** After a result: on to the next board, or to the results screen if the run is over. */
   const advance = useCallback(() => {
     if (!feedback) return;
     if (nextRound) {
@@ -164,7 +169,7 @@ export default function PlayPage() {
             <div className="score-card">
               {isBest
                 ? <p className="ribbon"><CrownIcon size={18} /> New personal best!</p>
-                : <p className="ribbon ribbon-plain">Out on level {score + 1}</p>}
+                : <p className="ribbon ribbon-plain">Out of lives on level {score + 1}</p>}
               <p className="score-label">Levels cleared</p>
               <FinalScore score={score} />
               {isBest && previousBest > 0 && <p className="chip chip-green">▲ +{score - previousBest} on your previous best</p>}
@@ -204,20 +209,23 @@ export default function PlayPage() {
       <section className="panel panel-game">
         <div className="stats">
           <span><TargetIcon size={20} /> Level <b data-testid="level">{round?.level ?? 1}</b></span>
+          <span>Lives <b className="lives" data-testid="lives" data-lives={lives} aria-label={`${lives} of ${START_LIVES}`}>
+            {Array.from({ length: START_LIVES }, (_, i) => <i key={i} className={i < lives ? "is-left" : undefined}>♥</i>)}
+          </b></span>
           <span><StarIcon size={20} className="gold" /> Cleared <b data-testid="score" data-score={score}>{score}</b></span>
           <span><TrophyIcon size={20} className="gold" /> Best <b>{Math.max(best, score)}</b></span>
         </div>
         {round ? <>
-          <Turf pair={round.pair} splats={round.splats} />
+          <Turf pair={round.pair} splats={round.splats} cut={round.cut} />
           {!feedback ? <>
-            <p className="prompt">Which colour has more turf?</p>
+            <p className="prompt">Which colour takes up more territory?</p>
             <div className="choices">
               {([0, 1] as const).map((choice) => (
                 <button key={choice} type="button" data-choice={choice} data-quiet
                   className={`btn btn-big btn-ink${pending === choice ? " is-picked" : ""}`}
                   style={{ "--ink": colors[choice] } as CSSProperties} disabled={pending !== null}
                   aria-label={choice === 0 ? "Left colour" : "Right colour"} onClick={() => void choose(choice)}>
-                  This one <kbd>{choice + 1}</kbd>
+                  <i className="swatch" /> This colour <kbd>{choice + 1}</kbd>
                 </button>
               ))}
             </div>
@@ -226,13 +234,13 @@ export default function PlayPage() {
             <div className="status" role="status" aria-live="polite">
               {feedback.correct
                 ? <span className="toast toast-good" data-testid="verdict"><CheckIcon size={24} /> Correct!</span>
-                : <span className="toast toast-bad" data-testid="verdict">✕ Wrong — the run ends here</span>}
+                : <span className="toast toast-bad" data-testid="verdict">✕ Wrong — {lives === 0 ? "that was your last life" : lives === 1 ? "1 life left" : `${lives} lives left`}</span>}
             </div>
             <button type="button" className="btn btn-yellow btn-big" data-testid="advance" autoFocus onClick={advance}>
-              {nextRound ? <><PlayIcon size={24} /> Next Level</> : "See Results"}
+              {!nextRound ? "See Results" : feedback.correct ? <><PlayIcon size={24} /> Next Level</> : <><PlayIcon size={24} /> Try Another</>}
             </button>
           </>}
-        </> : !error && <p className="note loading">Painting the first turf…</p>}
+        </> : !error && <p className="note loading">Drawing the first map…</p>}
         {error && <>
           <p className="error" role="alert">{error}</p>
           <button type="button" className="btn btn-purple" onClick={() => void start()}>Start a new game</button>
