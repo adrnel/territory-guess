@@ -51,9 +51,6 @@ export function seededRng(seed: number): Rng {
   };
 }
 
-/** How many circles are painted: the base number, plus more the nearer the split is to even. */
-const CIRCLES_BASE = 12;
-const CIRCLES_PER_SHARE = 46;
 /** How far (in grid cells) each of the three blur passes reaches. Sets how rounded the corners are. */
 const BLUR = 4;
 
@@ -122,84 +119,101 @@ export function shareOf(board: Board): number {
   return Math.round((a / (a + b)) * 1000) / 10;
 }
 
+/** The stretch of pattern a board is cut from, in board-widths, and how coarsely it is searched. */
+const AREA_W = 4;
+const AREA_H = 2.5;
+const COARSE = 48; // cells per board-width
+/** Circles per square board-width: a few very large ones as a base, then the ones that give the look. */
+const BASE_DENSITY = 75;
+const DENSITY = 58;
+
 /**
- * Paints circles of both colours over each other, then sets the cut so that
- * colour 0 ends up with `target0` (0-1) of the board. Each circle goes to
- * whichever colour is short of its share at that moment, so both colours are
- * painted on top of the other again and again: each ends up with round bulges
- * (where it went on top) and round bays (where it was painted over).
+ * Makes a stretch of balanced pattern several boards across, then looks for
+ * the board-sized view of it whose split is closest to `target0` (colour 0's
+ * share, 0-1), and nudges the cut to make the split exact.
+ *
+ * The pattern is circles painted over each other, each one a coin-toss between
+ * the two colours. Neither colour is the background: each bulges where it was
+ * painted last and has a round bay where it was painted over. An even pattern
+ * still has patches that hold more of one colour than the other, and those
+ * are what an uneven board is cut from.
  */
 export function generateBoard(target0: number, rng: Rng = Math.random): Board {
-  const cells = GRID_W * GRID_H;
-  const grid = new Uint8Array(cells);
-  // Start with the board filled by the colour that is to have more of it: a
-  // circle big enough to cover everything. The other colour then reaches its
-  // share well before the circles run out, and the rest go back and forth.
-  const first = target0 > 0.5 || (target0 === 0.5 && rng() < 0.5) ? 0 : 1;
-  const splats: Splats = [UNIT / 2, UNIT / 2, UNIT * 2, first];
-  let owned0 = first === 0 ? cells : 0;
-  if (first === 0) grid.fill(1);
-  // Fewer circles means longer unbroken arcs. The colour with less of the board
-  // needs enough circles to reach its share, plus some back-and-forth after.
-  const circles = Math.round(CIRCLES_BASE + CIRCLES_PER_SHARE * Math.min(target0, 1 - target0));
-  for (let i = 0; i < circles; i++) {
-    const color = owned0 / cells < target0 ? 0 : 1;
-    const value = color === 0 ? 1 : 0;
-    // Mostly big circles, with the odd small one. Radius in board-widths.
-    // The last few are small, to bring the split close to the target before the cut is set.
-    const r = Math.round((i >= circles - 3 || rng() < 0.1 ? 0.028 + rng() * 0.01 : 0.05 + rng() * 0.04) * UNIT);
-    // Try a few places and keep the cleanest. Painting most of the way across
-    // an earlier circle of the other colour leaves a crescent of it behind, so
-    // the best place is one that leaves no crescents; among those, the one
-    // where most of the new circle is on show.
-    let x = 0;
-    let y = 0;
-    let bestCrescents = Infinity;
-    let bestFresh = -1;
-    for (let attempt = 0; attempt < PLACES; attempt++) {
-      const tryX = Math.round((rng() * 1.04 - 0.02) * UNIT);
-      const tryY = Math.round((rng() * 1.04 - 0.02) * UNIT);
-      let crescents = 0;
-      for (let j = 4; j < splats.length; j += 4) {
-        if (splats[j + 3] === color) continue;
-        const apart = Math.hypot(tryX - splats[j], (tryY - splats[j + 1]) / ASPECT);
-        // How much of the earlier circle is left, measured along the line through both centres.
-        const left = splats[j + 2] - r + apart;
-        if (apart < splats[j + 2] + r && left > 0 && left < splats[j + 2] * 1.15) crescents++;
-      }
-      if (crescents > bestCrescents) continue;
-      const fresh = stamp(grid, tryX, tryY, r, value, false);
-      if (crescents < bestCrescents || fresh > bestFresh) { bestCrescents = crescents; bestFresh = fresh; x = tryX; y = tryY; }
+  // Circles as [x, y, radius, colour] in board-widths, in painting order.
+  const circles: number[] = [];
+  const scatter = (count: number, size: () => number) => {
+    for (let i = 0; i < count; i++) {
+      const r = size();
+      circles.push((AREA_W + 2 * r) * rng() - r, (AREA_H + 2 * r) * rng() - r, r, rng() < 0.5 ? 0 : 1);
     }
-    splats.push(x, y, r, color);
-    owned0 += stamp(grid, x, y, r, value, true) * (value ? 1 : -1);
-  }
-  return { splats, cut: cutFor(blur(Float32Array.from(grid)), target0) };
-}
+  };
+  // Large circles first, so every part of the area has been painted by something.
+  scatter(AREA_W * AREA_H * BASE_DENSITY, () => 0.09 + rng() * 0.05);
+  scatter(AREA_W * AREA_H * DENSITY, () => (rng() < 0.08 ? 0.024 + rng() * 0.01 : 0.046 + rng() * 0.036));
 
-/** How many places are tried for each circle. */
-const PLACES = 8;
-
-/**
- * Counts the cells a circle would change to `value` (the same cells paint()
- * fills), and changes them if `apply` is set.
- */
-function stamp(grid: Uint8Array, x: number, y: number, r: number, value: number, apply: boolean): number {
-  const cx = (x / UNIT) * GRID_W - 0.5;
-  const cy = (y / UNIT) * GRID_H - 0.5;
-  const cr = (r / UNIT) * GRID_W;
-  const top = Math.max(0, Math.ceil(cy - cr));
-  const bottom = Math.min(GRID_H - 1, Math.floor(cy + cr));
-  let changed = 0;
-  for (let row = top; row <= bottom; row++) {
-    const half = Math.sqrt(cr * cr - (row - cy) * (row - cy));
-    const left = Math.max(0, Math.ceil(cx - half));
-    const right = Math.min(GRID_W - 1, Math.floor(cx + half));
-    for (let at = row * GRID_W + left; at <= row * GRID_W + right; at++) {
-      if (grid[at] !== value) { changed++; if (apply) grid[at] = value; }
+  // Paint the whole area coarsely and count colour 0's cells in every possible view at once.
+  const columns = AREA_W * COARSE;
+  const rows = AREA_H * COARSE;
+  // Wherever no circle happens to land shows the undercoat, a coin-toss too.
+  const undercoat = rng() < 0.5 ? 0 : 1;
+  const coarse = new Uint8Array(columns * rows).fill(undercoat === 0 ? 1 : 0);
+  for (let i = 0; i < circles.length; i += 4) {
+    const cx = circles[i] * COARSE - 0.5;
+    const cy = circles[i + 1] * COARSE - 0.5;
+    const r = circles[i + 2] * COARSE;
+    const value = circles[i + 3] === 0 ? 1 : 0;
+    const top = Math.max(0, Math.ceil(cy - r));
+    const bottom = Math.min(rows - 1, Math.floor(cy + r));
+    for (let row = top; row <= bottom; row++) {
+      const half = Math.sqrt(r * r - (row - cy) * (row - cy));
+      const left = Math.max(0, Math.ceil(cx - half));
+      const right = Math.min(columns - 1, Math.floor(cx + half));
+      if (left <= right) coarse.fill(value, row * columns + left, row * columns + right + 1);
     }
   }
-  return changed;
+  const totals = new Int32Array((columns + 1) * (rows + 1));
+  for (let row = 0; row < rows; row++) {
+    let line = 0;
+    for (let col = 0; col < columns; col++) {
+      line += coarse[row * columns + col];
+      totals[(row + 1) * (columns + 1) + col + 1] = totals[row * (columns + 1) + col + 1] + line;
+    }
+  }
+  const viewW = COARSE;
+  const viewH = (COARSE * GRID_H) / GRID_W;
+  const want = target0 * viewW * viewH;
+  const spanCols = columns - viewW + 1;
+  const spanRows = rows - viewH + 1;
+  // Start somewhere random so that, among equally good views, the choice isn't always the top-left one.
+  const startCol = Math.floor(rng() * spanCols);
+  const startRow = Math.floor(rng() * spanRows);
+  let best = Infinity;
+  let bestCol = 0;
+  let bestRow = 0;
+  for (let r = 0; r < spanRows && best > 0; r++) {
+    const row = (startRow + r) % spanRows;
+    for (let c = 0; c < spanCols; c++) {
+      const col = (startCol + c) % spanCols;
+      const inside = totals[(row + viewH) * (columns + 1) + col + viewW] - totals[row * (columns + 1) + col + viewW]
+        - totals[(row + viewH) * (columns + 1) + col] + totals[row * (columns + 1) + col];
+      const miss = Math.abs(inside - want);
+      if (miss < best) { best = miss; bestCol = col; bestRow = row; }
+    }
+  }
+
+  // Keep the circles that reach into the chosen view, measured from its corner.
+  const x0 = bestCol / COARSE;
+  const y0 = bestRow / COARSE;
+  // The undercoat goes first: a circle big enough to cover the whole view.
+  const splats: Splats = [UNIT / 2, UNIT / 2, UNIT * 2, undercoat];
+  for (let i = 0; i < circles.length; i += 4) {
+    const x = circles[i] - x0;
+    const y = circles[i + 1] - y0;
+    const r = circles[i + 2];
+    if (x + r < 0 || x - r > 1 || y + r < 0 || y - r > 1 / ASPECT) continue;
+    splats.push(Math.round(x * UNIT), Math.round(y * ASPECT * UNIT), Math.round(r * UNIT), circles[i + 3]);
+  }
+  return { splats, cut: cutFor(fieldOf(splats), target0) };
 }
 
 /** The value that `above` (0-1) of the field lies above. */
@@ -271,10 +285,14 @@ export function generateSoloRound(level: number, rng: Rng = Math.random): Round 
 /** The colour (0 or 1) with more territory. */
 export const winnerOf = (share: number): 0 | 1 => (share > 50 ? 0 : 1);
 
-/** Duel: guess the split, so the boards range from lopsided to nearly even. */
+/**
+ * Duel: guess the split. Kept between 30/70 and 70/30: an even pattern has no
+ * view more lopsided than that, and forcing one would leave one colour as
+ * islands in the other.
+ */
 export function generateDuelRound(rng: Rng = Math.random): Round {
   const pair = Math.floor(rng() * COLOR_PAIRS.length);
-  const board = generateBoard(0.15 + rng() * 0.7, rng);
+  const board = generateBoard(0.3 + rng() * 0.4, rng);
   return { pair, ...board, share: shareOf(board) };
 }
 

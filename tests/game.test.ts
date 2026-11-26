@@ -50,6 +50,30 @@ describe("territory", () => {
     }
   });
 
+  it("finds an uneven view of an even pattern, needing only a nudge of the cut", () => {
+    const rng = seededRng(21);
+    for (const target of [0.4, 0.45, 0.5, 0.55, 0.6]) {
+      for (let i = 0; i < 10; i++) expect(Math.abs(generateBoard(target, rng).cut - 0.5)).toBeLessThan(0.1);
+    }
+  });
+
+  it("treats the two colours alike", () => {
+    // Over many boards asked to be even, each colour is the undercoat and the top coat about as often.
+    const rng = seededRng(5);
+    let undercoat0 = 0;
+    let circles0 = 0;
+    let circles = 0;
+    for (let i = 0; i < 60; i++) {
+      const { splats } = generateBoard(0.5, rng);
+      if (splats[3] === 0) undercoat0++;
+      for (let k = 7; k < splats.length; k += 4) { circles++; if (splats[k] === 0) circles0++; }
+    }
+    expect(undercoat0).toBeGreaterThan(15);
+    expect(undercoat0).toBeLessThan(45);
+    expect(circles0 / circles).toBeGreaterThan(0.45);
+    expect(circles0 / circles).toBeLessThan(0.55);
+  });
+
   it("paints both colours over each other, starting from a full board", () => {
     const rng = seededRng(1);
     for (const target of [0.3, 0.5, 0.7]) {
@@ -60,14 +84,12 @@ describe("territory", () => {
       const colors = [];
       for (let i = 4; i < splats.length; i += 4) {
         expect(splats[i + 2]).toBeGreaterThan(0);
-        expect(splats[i + 2]).toBeLessThan(UNIT / 8);
+        expect(splats[i + 2]).toBeLessThan(UNIT / 5);
         colors.push(splats[i + 3]);
       }
       // Each colour is painted several times, and neither is always the one on top.
-      expect(colors.filter((c) => c === 0).length).toBeGreaterThan(2);
-      expect(colors.filter((c) => c === 1).length).toBeGreaterThan(2);
-      // Few enough that each circle keeps a long stretch of its outline.
-      expect(colors.length).toBeLessThanOrEqual(36);
+      expect(colors.filter((c) => c === 0).length).toBeGreaterThan(20);
+      expect(colors.filter((c) => c === 1).length).toBeGreaterThan(20);
       expect(colors.join("")).toMatch(/01.*10|10.*01/);
       // The cut stays near the middle, where both colours are rounded alike.
       expect(cut).toBeGreaterThan(0.3);
@@ -124,12 +146,12 @@ describe("solo rounds", () => {
 });
 
 describe("duel rounds", () => {
-  it("range from lopsided to nearly even", () => {
+  it("range from 30/70 to 70/30", () => {
     const rng = seededRng(11);
     const shares = Array.from({ length: 120 }, () => generateDuelRound(rng).share);
-    expect(Math.min(...shares)).toBeLessThan(30);
-    expect(Math.max(...shares)).toBeGreaterThan(70);
-    expect(shares.every((s) => s > 3 && s < 97)).toBe(true);
+    expect(Math.min(...shares)).toBeLessThan(35);
+    expect(Math.max(...shares)).toBeGreaterThan(65);
+    expect(shares.every((s) => s >= 29.9 && s <= 70.1)).toBe(true);
     expect(shares.some((s) => s > 40 && s < 60)).toBe(true);
   });
 });

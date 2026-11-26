@@ -129,32 +129,36 @@ rooms) slow that down.
 
 ## How a board is made
 
-The first version threw hundreds of small flat circles, which looked speckled
-and left the final split to chance. A second version drew soft circles of one
-colour on a plain ground, which was smooth but lopsided: one colour was always
-the round shapes and the other always the gaps between them. Boards are now
-made so that both colours get the same treatment and the split is chosen:
+Earlier versions drew one colour onto the other, and it showed: the colour
+with more of the board always looked like the background and the other like
+shapes placed on it. Boards are now cut from a pattern in which the two
+colours are treated identically:
 
-1. Fill the board with the colour that is to have more of it, then paint
-   20 to 35 large circles over it (more the nearer the split is to even). Each
-   circle goes to whichever colour is short of its target share at that
-   moment, so the two colours keep painting over each other. A colour bulges
-   where it was painted on top and has a round bay where it was painted over.
-   Each circle is tried in eight places and put where it leaves no crescent
-   of an earlier circle behind and shows as much of itself as possible; that,
-   and keeping the number of circles low, is what keeps the outlines as long
-   clean arcs rather than a jigsaw of short ones.
-2. Paint that onto a 320×180 grid and blur it. Each cell now holds a value
-   from 0 (deep in colour 1) to 1 (deep in colour 0).
-3. Pick the `cut`: the value above which a cell counts as colour 0. It is set
-   to the value that gives exactly the wanted share of cells, so a level 1
-   board is 60/40 to within a tenth of a point.
+1. **Make a large, even pattern.** Over an area about eighteen boards in size,
+   paint a few hundred circles on top of each other, each one a coin-toss
+   between the two colours (large ones first, so everything is covered, then
+   the smaller ones that give the look). Neither colour is the background:
+   each bulges where it was painted last and has a round bay or hole where it
+   was painted over.
+2. **Find the right view.** Overall the pattern is 50/50, but by chance some
+   parts hold more of one colour. The area is painted on a coarse grid and
+   every board-sized view of it is scored at once (with running totals); the
+   one whose split is nearest the target is chosen. A 60/40 view is normally
+   there to be found.
+3. **Round it and make it exact.** The circles reaching into that view are
+   painted on the 320×180 grid and blurred, so each cell holds a value from 0
+   (deep in colour 1) to 1 (deep in colour 0). The `cut` is the value above
+   which a cell counts as colour 0, set to give exactly the wanted share.
+   Because step 2 already got close, the cut stays next to 0.5, where blurring
+   rounds both colours' corners equally.
 
-Blurring and cutting again rounds every corner, outward and inward, and
-because the cut sits near the middle (0.5) it does so equally for both
-colours. The browser is sent the circles and the cut, repeats steps 2 and 3,
-and smooths the grid up to the screen. Generating and measuring a board takes
-about 4 ms, inside the free plan's CPU limit.
+The browser is sent the circles for the chosen view and the cut, and repeats
+step 3. Generating and measuring a board takes about 4 ms, inside the free
+plan's CPU limit.
+
+A balanced pattern has no view much more lopsided than about 70/30, and
+forcing one would mean moving the cut a long way, which turns one colour back
+into islands. So duel boards are kept between 30/70 and 70/30.
 
 ## Duel rules
 

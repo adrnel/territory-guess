@@ -7,8 +7,8 @@ Two colours share a map. Work out which takes up more of it.
   costs one and deals a new map at the same level. Your score is the number
   of levels cleared, and it can go on the global leaderboard.
 - **Duel** — share a 6-character room code or invite link with a friend. Each
-  round you both see the same board and have five seconds to set a bar to the
-  split you think it is. Closest wins the round; first to 5 wins.
+  round you both see the same board (somewhere between 30/70 and 70/30) and
+  have five seconds to set a bar to the split you think it is. Closest wins the round; first to 5 wins.
 
 Duel details: the bar starts at 50-50, and if the five seconds run out your bar
 counts wherever you left it. If both players are equally close, whoever locked
