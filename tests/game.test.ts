@@ -4,36 +4,41 @@ import {
   GRID_H, GRID_W, MAX_NAME_LENGTH, seededRng, shareOf, START_LIVES, UNIT, winnerOf,
 } from "../src/lib/game";
 
+const GROUND1 = [5000, 5000, 20000, 1]; // a circle of colour 1 big enough to cover the board
+const middle = (GRID_H / 2) * GRID_W + GRID_W / 2;
+
 describe("territory", () => {
-  it("gives the ground around a blob to its colour", () => {
-    // One colour-0 blob in the middle, reaching a fifth of the board's width.
-    const board = { splats: [5000, 5000, 2000, 0], cut: 0.25 };
+  it("measures a painted circle", () => {
+    // A colour-0 circle a fifth of the board's width across... in radius: 64 grid cells.
+    const board = { splats: [...GROUND1, 5000, 5000, 2000, 0], cut: 0.5 };
     const [a, b] = countTurf(board);
     expect(a + b).toBe(GRID_W * GRID_H);
-    // Inside the cut the pull is (1 - d²/r²)³ > 0.25: a disc, d² < r² × (1 - ∛0.25), with r = 64 cells.
-    const disc = Math.PI * 64 * 64 * (1 - Math.cbrt(0.25));
-    expect(a / disc).toBeGreaterThan(0.97);
-    expect(a / disc).toBeLessThan(1.03);
-    expect(shareOf({ splats: [], cut: 0.25 })).toBe(0);
-    expect(shareOf({ splats: [], cut: -0.25 })).toBe(100);
+    expect(a / (Math.PI * 64 * 64)).toBeGreaterThan(0.97);
+    expect(a / (Math.PI * 64 * 64)).toBeLessThan(1.03);
+    expect(shareOf({ splats: GROUND1, cut: 0.5 })).toBe(0);
+    expect(shareOf({ splats: [5000, 5000, 20000, 0], cut: 0.5 })).toBe(100);
   });
 
-  it("pulls the other way for colour 1", () => {
-    const zero = fieldOf([5000, 5000, 2000, 0]);
-    const one = fieldOf([5000, 5000, 2000, 1]);
-    const middle = (GRID_H / 2) * GRID_W + GRID_W / 2;
-    expect(zero[middle]).toBeCloseTo(1, 2);
-    expect(one[middle]).toBeCloseTo(-1, 2);
-    expect(zero[0]).toBe(0);
+  it("lets later circles paint over earlier ones", () => {
+    const under = [...GROUND1, 5000, 5000, 2000, 0];
+    expect(fieldOf(under)[middle]).toBeCloseTo(1, 5);
+    expect(fieldOf([...under, 5000, 5000, 1000, 1])[middle]).toBeCloseTo(0, 5);
+    const ring = countTurf({ splats: [...under, 5000, 5000, 1000, 1], cut: 0.5 })[0];
+    const disc = countTurf({ splats: under, cut: 0.5 })[0];
+    expect(ring / disc).toBeGreaterThan(0.72);
+    expect(ring / disc).toBeLessThan(0.78);
   });
 
-  it("merges neighbouring blobs into one territory", () => {
-    const apart = countTurf({ splats: [2500, 5000, 1500, 0, 7500, 5000, 1500, 0], cut: 0.25 })[0];
-    const touching = countTurf({ splats: [4400, 5000, 1500, 0, 5600, 5000, 1500, 0], cut: 0.25 })[0];
-    const one = countTurf({ splats: [5000, 5000, 1500, 0], cut: 0.25 })[0];
-    expect(apart).toBe(one * 2);
-    expect(touching).toBeGreaterThan(one);
-    expect(touching).toBeLessThan(one * 2);
+  it("is soft at the edges and flat inside, so corners round off evenly for both colours", () => {
+    const field = fieldOf([...GROUND1, 5000, 5000, 2000, 0]);
+    const edge = middle + 64; // on the circle's rim
+    expect(field[edge]).toBeGreaterThan(0.3);
+    expect(field[edge]).toBeLessThan(0.7);
+    expect(field[middle + 40]).toBeCloseTo(1, 5);
+    expect(field[middle + 90]).toBeCloseTo(0, 5);
+    // Swapping the two colours gives exactly the mirror-image field.
+    const swapped = fieldOf([5000, 5000, 20000, 0, 5000, 5000, 2000, 1]);
+    expect(swapped[edge]).toBeCloseTo(1 - field[edge], 5);
   });
 
   it("hits the split it is asked for", () => {
@@ -45,21 +50,26 @@ describe("territory", () => {
     }
   });
 
-  it("sends whole-number blobs of a single colour, the one with less of the board", () => {
+  it("paints both colours over each other, starting from a full board", () => {
     const rng = seededRng(1);
-    for (const target of [0.3, 0.7]) {
+    for (const target of [0.3, 0.5, 0.7]) {
       const { splats, cut } = generateBoard(target, rng);
       expect(splats.length % 4).toBe(0);
-      expect(splats.length / 4).toBeGreaterThan(12);
       expect(splats.every(Number.isInteger)).toBe(true);
-      for (let i = 0; i < splats.length; i += 4) {
+      expect(splats[2]).toBeGreaterThanOrEqual(UNIT * 2);
+      const colors = [];
+      for (let i = 4; i < splats.length; i += 4) {
         expect(splats[i + 2]).toBeGreaterThan(0);
-        expect(splats[i + 2]).toBeLessThan(UNIT / 4);
-        expect(splats[i + 3]).toBe(target < 0.5 ? 0 : 1);
+        expect(splats[i + 2]).toBeLessThan(UNIT / 8);
+        colors.push(splats[i + 3]);
       }
-      // Near the ideal cut, so a lone blob shows as a circle of the size it was given.
-      expect(Math.abs(cut)).toBeGreaterThan(0.1);
-      expect(Math.abs(cut)).toBeLessThan(0.32);
+      // Each colour is painted many times, and neither is always the one on top.
+      expect(colors.filter((c) => c === 0).length).toBeGreaterThan(5);
+      expect(colors.filter((c) => c === 1).length).toBeGreaterThan(5);
+      expect(colors.join("")).toMatch(/01.*10|10.*01/);
+      // The cut stays near the middle, where both colours are rounded alike.
+      expect(cut).toBeGreaterThan(0.3);
+      expect(cut).toBeLessThan(0.7);
     }
   });
 

@@ -105,7 +105,7 @@ tests/                   Unit tests
 
 ## Known limits
 
-- The browser is sent the blobs so it can draw the map, which means a script
+- The browser is sent the circles so it can draw the map, which means a script
   can measure it as exactly as the server does. Server-side scoring stops
   fake scores but not a bot. Rate limits slow this down; they don't prevent it.
 - The split is measured on a 320×180 grid and the browser smooths that grid

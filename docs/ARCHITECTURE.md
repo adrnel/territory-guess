@@ -106,7 +106,7 @@ generated in the browser, so there are no audio files to download.
 Anything held in the browser can be read or changed by the player, so the
 browser is treated as a display and an input device only.
 
-- A board is a list of soft blobs (`splats`) and a `cut`, made by the server
+- A board is a list of circles (`splats`) and a `cut`, made by the server
   (see [How a board is made](#how-a-board-is-made)). The server measures the
   split on a 320×180 grid (`shareOf` in `src/lib/game.ts`) and keeps that
   number to itself until the round is over. The browser works out the same
@@ -121,7 +121,7 @@ browser is treated as a display and an input device only.
   is settled (only "they have locked in" is shared), and the room's clock
   decides the deadline and who locked in first.
 
-Limit: the browser has to be given the blobs to draw the map, so a script can
+Limit: the browser has to be given the circles to draw the map, so a script can
 measure the board exactly as the server does (the smoke test does just that).
 Server-side scoring stops made-up scores, not a bot. Per-IP rate limits (150
 requests a minute; 12 a minute for starting games, posting scores and creating
@@ -129,28 +129,28 @@ rooms) slow that down.
 
 ## How a board is made
 
-The first version threw hundreds of flat circles, which looked speckled and
-left the final split to chance (later circles covered earlier ones). Boards
-are now smooth and the split is chosen:
+The first version threw hundreds of small flat circles, which looked speckled
+and left the final split to chance. A second version drew soft circles of one
+colour on a plain ground, which was smooth but lopsided: one colour was always
+the round shapes and the other always the gaps between them. Boards are now
+made so that both colours get the same treatment and the split is chosen:
 
-1. Scatter blobs of one colour: mostly large, some small. Each has a centre
-   and a reach, and pulls the ground around it towards its colour, strongest
-   at the centre and fading smoothly to nothing at its reach.
-2. Add the pulls up at every cell of a 320×180 grid.
-3. Pick the `cut`: the pull above which a cell counts as that colour. It is
-   set to the value that gives exactly the wanted share of cells, so a level 1
+1. Fill the board with one colour, then paint about 60 circles over it, mostly
+   large. Each circle goes to whichever colour is short of its target share at
+   that moment, so the two colours keep painting over each other. A colour
+   bulges where it was painted on top and has a round bay where it was painted
+   over.
+2. Paint that onto a 320×180 grid and blur it. Each cell now holds a value
+   from 0 (deep in colour 1) to 1 (deep in colour 0).
+3. Pick the `cut`: the value above which a cell counts as colour 0. It is set
+   to the value that gives exactly the wanted share of cells, so a level 1
    board is 60/40 to within a tenth of a point.
 
-The look depends on where the cut lands. At a cut of about 0.2 a lone blob
-shows as a clean circle about two thirds of its reach across, and two
-neighbours join with a rounded neck. A much higher or lower cut would swell
-or shrink the circles into lumps. So the generator scatters more blobs than
-it needs and searches for how many of them to use so that the cut for the
-wanted share falls near 0.2: more blobs in play means a higher cut.
-
-The blobs are always the colour with less of the board (circles on a ground
-of the other). Generating and measuring a board takes about 3 ms, inside the
-free plan's CPU limit.
+Blurring and cutting again rounds every corner, outward and inward, and
+because the cut sits near the middle (0.5) it does so equally for both
+colours. The browser is sent the circles and the cut, repeats steps 2 and 3,
+and smooths the grid up to the screen. Generating and measuring a board takes
+about 4 ms, inside the free plan's CPU limit.
 
 ## Duel rules
 

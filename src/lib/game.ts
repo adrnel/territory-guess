@@ -17,23 +17,23 @@ export const COLOR_PAIRS = [
 
 /** The board is 16:9. */
 export const ASPECT = 16 / 9;
-/** Blob coordinates are whole numbers out of this, to keep the payload small. */
+/** Circle coordinates are whole numbers out of this, to keep the payload small. */
 export const UNIT = 10000;
 /** The grid the territory is measured on (and that the browser smooths when drawing). */
 export const GRID_W = 320;
 export const GRID_H = 180;
 
 /**
- * Soft blobs, flattened: x, y, reach, colour (0 or 1), repeated. x and the
- * reach are in UNITs of the board's width, y in UNITs of its height. Each blob
- * pulls the ground around it towards its colour, fading to nothing at its reach.
+ * Circles in painting order, flattened: x, y, radius, colour (0 or 1),
+ * repeated. x and the radius are in UNITs of the board's width, y in UNITs of
+ * its height. Later circles paint over earlier ones.
  */
 export type Splats = number[];
 /**
- * A board: the blobs, plus the cut. Every point is pulled one way by colour 0's
- * blobs and the other by colour 1's; it belongs to colour 0 where the net pull
- * is above the cut. Blobs of one colour merge smoothly, and the two colours
- * cover the whole board between them.
+ * A board: the circles, plus the cut. Once painted, the picture is blurred, so
+ * every point has a value between 0 (deep in colour 1) and 1 (deep in colour
+ * 0); it belongs to colour 0 where that value is above the cut. Blurring and
+ * cutting again is what rounds off every corner, on both colours alike.
  */
 export type Board = { splats: Splats; cut: number };
 
@@ -51,57 +51,58 @@ export function seededRng(seed: number): Rng {
   };
 }
 
-/**
- * A lone blob shows as a circle this fraction of its reach across, when the
- * cut is at IDEAL_CUT. The rest of its reach is the soft fringe that lets two
- * neighbouring circles join with a rounded neck instead of a sharp corner.
- */
-const VISIBLE = 0.644;
-const IDEAL_CUT = 0.2;
-/** A cut outside this range would make the circles visibly swell or shrink into lumps. */
-const CUT_RANGE = [0.11, 0.31];
+/** How many circles are painted. Enough to cover the board about twice over. */
+const CIRCLES = 60;
+/** How far (in grid cells) each of the three blur passes reaches. Sets how rounded the corners are. */
+const BLUR = 4;
 
-/**
- * All of a board's blobs are one colour: circles of it on a ground of the
- * other. They are always the colour with less of the board.
- */
-function scatter(color: 0 | 1, count: number, rng: Rng): Splats {
-  const splats: Splats = [];
-  for (let i = 0; i < count; i++) {
-    // Mostly big circles, with the odd small one. Sizes are the visible radius, in board-widths.
-    const radius = rng() < 0.25 ? 0.01 + rng() * 0.012 : 0.032 + rng() * 0.038;
-    // Centres spill a little past the edges so the border looks like the middle.
-    splats.push(
-      Math.round((rng() * 1.08 - 0.04) * UNIT),
-      Math.round((rng() * 1.08 - 0.04) * UNIT),
-      Math.round((radius / VISIBLE) * UNIT),
-      color,
-    );
-  }
-  return splats;
-}
-
-/** The net pull towards colour 0 at the centre of every grid cell, row by row. */
-export function fieldOf(splats: Splats): Float32Array {
-  const field = new Float32Array(GRID_W * GRID_H);
+/** Paints the circles onto the grid: 1 where colour 0 is on top, 0 where colour 1 is. */
+function paint(splats: Splats): Float32Array {
+  const grid = new Float32Array(GRID_W * GRID_H);
   for (let i = 0; i + 3 < splats.length; i += 4) {
     const cx = (splats[i] / UNIT) * GRID_W - 0.5;
     const cy = (splats[i + 1] / UNIT) * GRID_H - 0.5;
-    const reach = (splats[i + 2] / UNIT) * GRID_W;
-    if (!(reach > 0)) continue;
-    const sign = splats[i + 3] === 0 ? 1 : -1;
-    const inverse = 1 / (reach * reach);
-    const top = Math.max(0, Math.ceil(cy - reach));
-    const bottom = Math.min(GRID_H - 1, Math.floor(cy + reach));
-    const left = Math.max(0, Math.ceil(cx - reach));
-    const right = Math.min(GRID_W - 1, Math.floor(cx + reach));
+    const r = (splats[i + 2] / UNIT) * GRID_W;
+    const value = splats[i + 3] === 0 ? 1 : 0;
+    const top = Math.max(0, Math.ceil(cy - r));
+    const bottom = Math.min(GRID_H - 1, Math.floor(cy + r));
     for (let row = top; row <= bottom; row++) {
-      const dy2 = (row - cy) * (row - cy);
-      for (let col = left; col <= right; col++) {
-        const q = 1 - ((col - cx) * (col - cx) + dy2) * inverse;
-        if (q > 0) field[row * GRID_W + col] += sign * q * q * q;
-      }
+      const half = Math.sqrt(r * r - (row - cy) * (row - cy));
+      const left = Math.max(0, Math.ceil(cx - half));
+      const right = Math.min(GRID_W - 1, Math.floor(cx + half));
+      if (left <= right) grid.fill(value, row * GRID_W + left, row * GRID_W + right + 1);
     }
+  }
+  return grid;
+}
+
+/** Averages each cell with its neighbours along rows (step 1) or columns (step GRID_W). Edges repeat. */
+function blurLines(from: Float32Array, to: Float32Array, lines: number, length: number, lineStep: number, step: number) {
+  const scale = 1 / (2 * BLUR + 1);
+  for (let line = 0; line < lines; line++) {
+    const start = line * lineStep;
+    const last = start + (length - 1) * step;
+    let sum = from[start] * (BLUR + 1);
+    for (let k = 1; k <= BLUR; k++) sum += from[start + Math.min(k, length - 1) * step];
+    for (let n = 0; n < length; n++) {
+      to[start + n * step] = sum * scale;
+      const add = start + (n + BLUR + 1) * step;
+      const drop = start + (n - BLUR) * step;
+      sum += from[add > last ? last : add] - from[drop < start ? start : drop];
+    }
+  }
+}
+
+/** The painted board, blurred: for every grid cell, row by row, how deep it is in colour 0 (0-1). */
+export function fieldOf(splats: Splats): Float32Array {
+  return blur(paint(splats));
+}
+
+function blur(field: Float32Array): Float32Array {
+  const spare = new Float32Array(field.length);
+  for (let pass = 0; pass < 3; pass++) {
+    blurLines(field, spare, GRID_H, GRID_W, GRID_W, 1);
+    blurLines(spare, field, GRID_W, GRID_H, 1, GRID_W);
   }
   return field;
 }
@@ -121,37 +122,47 @@ export function shareOf(board: Board): number {
 }
 
 /**
- * Scatters blobs, then sets the cut so that colour 0 ends up with `target0`
- * (0-1) of the board. The split is chosen, not left to chance.
+ * Paints circles of both colours over each other, then sets the cut so that
+ * colour 0 ends up with `target0` (0-1) of the board. Each circle goes to
+ * whichever colour is short of its share at that moment, so both colours are
+ * painted on top of the other again and again: each ends up with round bulges
+ * (where it went on top) and round bays (where it was painted over).
  */
 export function generateBoard(target0: number, rng: Rng = Math.random): Board {
-  const islands: 0 | 1 = target0 < 0.5 || (target0 === 0.5 && rng() < 0.5) ? 0 : 1;
-  const minority = Math.min(target0, 1 - target0);
-  // Scatter more circles than needed, then use just enough of them that the
-  // cut giving the wanted share is close to the ideal one. More circles in
-  // play means a higher cut, so the right number can be searched for.
-  const pool = scatter(islands, MAX_BLOBS, rng);
-  let low = 4;
-  let high = MAX_BLOBS;
-  let count = Math.min(high, Math.max(low, Math.round(-Math.log(1 - minority) * 72)));
-  let best: Board | null = null;
-  for (let attempt = 0; attempt < 7; attempt++) {
-    const splats = pool.slice(0, count * 4);
-    const cut = cutFor(fieldOf(splats), target0);
-    const size = Math.abs(cut);
-    if (!best || Math.abs(size - IDEAL_CUT) < Math.abs(Math.abs(best.cut) - IDEAL_CUT)) best = { splats, cut };
-    if (size >= CUT_RANGE[0] && size <= CUT_RANGE[1]) break;
-    if (size < IDEAL_CUT) low = count + 1; else high = count - 1;
-    if (low > high) break;
-    count = attempt === 0
-      ? Math.min(high, Math.max(low, Math.round(count * (size < IDEAL_CUT ? 1.35 : 0.75))))
-      : Math.round((low + high) / 2);
+  const cells = GRID_W * GRID_H;
+  const grid = new Uint8Array(cells);
+  // Start with the board filled by one colour: a circle big enough to cover it.
+  const first = rng() < target0 ? 0 : 1;
+  const splats: Splats = [UNIT / 2, UNIT / 2, UNIT * 2, first];
+  let owned0 = first === 0 ? cells : 0;
+  if (first === 0) grid.fill(1);
+  for (let i = 0; i < CIRCLES; i++) {
+    const color = owned0 / cells < target0 ? 0 : 1;
+    // Mostly big circles, with the odd small one. Radius in board-widths.
+    // The last few are small, to bring the split close to the target before the cut is set.
+    const radius = i >= CIRCLES - 6 || rng() < 0.15 ? 0.024 + rng() * 0.012 : 0.042 + rng() * 0.046;
+    const x = Math.round((rng() * 1.06 - 0.03) * UNIT);
+    const y = Math.round((rng() * 1.06 - 0.03) * UNIT);
+    const r = Math.round(radius * UNIT);
+    splats.push(x, y, r, color);
+    // Keep count of who owns what as the paint goes on (the same sums as paint()).
+    const cx = (x / UNIT) * GRID_W - 0.5;
+    const cy = (y / UNIT) * GRID_H - 0.5;
+    const cr = (r / UNIT) * GRID_W;
+    const value = color === 0 ? 1 : 0;
+    const top = Math.max(0, Math.ceil(cy - cr));
+    const bottom = Math.min(GRID_H - 1, Math.floor(cy + cr));
+    for (let row = top; row <= bottom; row++) {
+      const half = Math.sqrt(cr * cr - (row - cy) * (row - cy));
+      const left = Math.max(0, Math.ceil(cx - half));
+      const right = Math.min(GRID_W - 1, Math.floor(cx + half));
+      for (let at = row * GRID_W + left; at <= row * GRID_W + right; at++) {
+        if (grid[at] !== value) { grid[at] = value; owned0 += value ? 1 : -1; }
+      }
+    }
   }
-  return best!;
+  return { splats, cut: cutFor(blur(Float32Array.from(grid)), target0) };
 }
-
-/** The most circles a board can use. */
-const MAX_BLOBS = 220;
 
 /** The value that `above` (0-1) of the field lies above. */
 function cutFor(field: Float32Array, above: number): number {
