@@ -131,8 +131,10 @@ export function shareOf(board: Board): number {
 export function generateBoard(target0: number, rng: Rng = Math.random): Board {
   const cells = GRID_W * GRID_H;
   const grid = new Uint8Array(cells);
-  // Start with the board filled by one colour: a circle big enough to cover it.
-  const first = rng() < target0 ? 0 : 1;
+  // Start with the board filled by the colour that is to have more of it: a
+  // circle big enough to cover everything. The other colour then reaches its
+  // share well before the circles run out, and the rest go back and forth.
+  const first = target0 > 0.5 || (target0 === 0.5 && rng() < 0.5) ? 0 : 1;
   const splats: Splats = [UNIT / 2, UNIT / 2, UNIT * 2, first];
   let owned0 = first === 0 ? cells : 0;
   if (first === 0) grid.fill(1);
