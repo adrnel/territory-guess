@@ -8,7 +8,13 @@ import "./globals.css";
 export const metadata: Metadata = {
   title: "Territory Guesser",
   description: "Two colours, one map. Guess which takes up more territory, climb the leaderboard, or duel a friend to call the exact split.",
-  icons: { icon: [{ url: "/icon.svg", type: "image/svg+xml" }] },
+  icons: {
+    icon: [
+      { url: "/favicon.ico", sizes: "any" },
+      { url: "/branding/icon-192.png", type: "image/png", sizes: "192x192" },
+    ],
+    apple: "/branding/icon-180.png",
+  },
 };
 
 export const viewport: Viewport = { width: "device-width", initialScale: 1, themeColor: "#f4ecdd" };

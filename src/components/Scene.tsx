@@ -27,7 +27,7 @@ export default function Scene({ children, variant = "page" }: Props) {
       <div className="stage">
         {variant === "home"
           ? <>
-            <h1 className="logo-wrap"><Logo /></h1>
+            <h1 className="logo-wrap"><img className="logo-art" src="/branding/logo.webp" alt="Territory Guesser" width={1200} height={417} draggable={false} /></h1>
             <p className="tagline">Two colours, one map. Which takes up more territory?</p>
           </>
           : <NavButton href="/" className="logo-wrap logo-btn" aria-label="Territory Guesser — back to menu"><Logo /></NavButton>}

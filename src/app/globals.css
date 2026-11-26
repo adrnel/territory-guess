@@ -47,7 +47,7 @@ ul, ol { list-style: none; }
 .logo-a { color: var(--green); }
 .logo-b { color: var(--coral); }
 .scene-page .logo { font-size: clamp(24px, 4vw, 38px); }
-.scene-home .logo { font-size: clamp(42px, 9vw, 80px); animation: panel-in .5s cubic-bezier(.2,.9,.3,1.15) backwards; }
+.logo-art { display: block; width: min(86vw, 560px); height: auto; max-height: 34vh; object-fit: contain; pointer-events: none; -webkit-user-drag: none; animation: panel-in .5s cubic-bezier(.2,.9,.3,1.15) backwards; }
 .tagline { color: var(--ink-soft); font-size: clamp(13px, 1.9vw, 16px); font-weight: 600; letter-spacing: .14em; text-transform: uppercase; text-align: center; margin-bottom: clamp(6px, 2vh, 18px); }
 
 /* ---------- Buttons ---------- */
